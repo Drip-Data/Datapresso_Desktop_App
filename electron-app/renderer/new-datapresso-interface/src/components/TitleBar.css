@@ -1,0 +1,47 @@
+.title-bar {
+  height: 32px;
+  background-color: #f0f0f0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  -webkit-app-region: drag;
+  padding: 0 10px;
+  border-bottom: 1px solid #ddd;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 500;
+  color: #333;
+}
+
+.window-controls {
+  display: flex;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.window-control-button.close:hover {
+  background-color: #e81123;
+  color: white;
+}
+
+.minimize-icon, .maximize-icon, .close-icon {
+  font-size: 16px;
+  line-height: 16px;
+}
