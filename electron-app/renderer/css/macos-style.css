@@ -1,0 +1,129 @@
+/* macOS风格UI元素 */
+
+:root {
+  --window-border-radius: 10px;
+  --window-background: rgba(245, 245, 245, 0.95);
+  --titlebar-height: 38px;
+  --window-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+body {
+  margin: 0;
+  overflow: hidden;
+}
+
+.app-container {
+  border-radius: var(--window-border-radius);
+  box-shadow: var(--window-shadow);
+  background-color: var(--window-background);
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* 自定义标题栏 */
+.app-header {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-app-region: drag; /* 使标题栏可拖动 */
+  height: var(--titlebar-height);
+  border-top-left-radius: var(--window-border-radius);
+  border-top-right-radius: var(--window-border-radius);
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+}
+
+/* 标题栏按钮不可拖动 */
+.header-controls button,
+.app-title {
+  -webkit-app-region: no-drag;
+}
+
+/* 内容区域样式 */
+.main-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 底部状态栏 */
+.app-footer {
+  border-bottom-left-radius: var(--window-border-radius);
+  border-bottom-right-radius: var(--window-border-radius);
+  border-top: 1px solid rgba(0, 0, 0, 0.1);
+  background: rgba(245, 245, 245, 0.9);
+  backdrop-filter: blur(5px);
+  height: 30px;
+  display: flex;
+  align-items: center;
+  padding: 0 15px;
+  font-size: 12px;
+}
+
+/* 针对Windows平台的控制按钮 */
+.window-controls {
+  display: flex;
+  margin-left: auto;
+  -webkit-app-region: no-drag;
+}
+
+.window-control-button {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  outline: none;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.window-control-button:hover {
+  opacity: 1;
+}
+
+.window-control-button.close:hover {
+  background-color: #ff5f57;
+  color: white;
+}
+
+.window-control-button.minimize:hover {
+  background-color: #ffbd2e;
+}
+
+.window-control-button.maximize:hover {
+  background-color: #28c940;
+}
+
+/* 侧边栏样式 */
+.sidebar {
+  background: rgba(235, 235, 235, 0.7);
+  backdrop-filter: blur(5px);
+  border-right: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* 弹窗样式 */
+#dialog-container {
+  border-radius: 10px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* 通知系统样式 */
+.notification {
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.2);
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}

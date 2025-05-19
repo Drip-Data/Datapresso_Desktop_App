@@ -1,0 +1,98 @@
+#DATA_FILE="data/alpaca_data.json"
+#MODEL_PATH="../models/Llama-3.2-1B"  # 同级目录的models文件夹
+#PROMPT_TYPE="alpaca"                 # 之后我们需要维护一个prompt_template模版？
+#SAMPLE_RATE="0.1"
+
+
+data_file: /root/autodl-tmp/Less_test/src/llamafactory/presso/cherry/data/alpaca_data.json
+data_file_name: alpaca_data
+model_path: /root/autodl-tmp/models/Llama-3.2-1B
+prompt: alpaca
+sample_rate: 0.1
+max_length: 512
+mod: pre
+start_idx: 0
+end_idx: 1024
+
+
+sample_num: 10
+kmeans_num_clusters: 100
+low_th: 25
+up_th: 75
+
+sent_type: 0
+ppl_type: 0
+
+cluster_method: kmeans
+reduce_method: tsne
+
+output_dir: trainer_pre_experienced
+num_train_epochs: 1
+save_strategy: steps
+learning_rate: 2e-5
+save_steps: 500
+save_total_limit: 4
+model_max_length: 1024
+per_device_train_batch_size: 2
+
+#output_dir: /root/autodl-tmp/LLaMA-Factory/saves/llama3-1b/lora_r_64/sft/less
+#checkpoint_dir: /root/autodl-tmp/LLaMA-Factory/saves/llama3-1b/lora_r_64/sft/less
+#
+#log_path: trainer_state.json
+#training_data_name: cot
+#training_data_file: src/llamafactory/LESS/data/train/processed/cot/cot_data.jsonl
+#gradient_type: adam
+#task: mmlu
+#validation_data_file: src/llamafactory/LESS/data
+#dims: 1024
+#output_path: selected_data
+#gradient_path: /root/autodl-tmp/LLaMA-Factory/grads/llama3-1b_lora_r_64/
+#percentage: 0.1
+
+### model
+model_name_or_path: meta-llama/Meta-Llama-3-8B-Instruct
+trust_remote_code: true
+
+### method
+stage: cherry
+do_train: true
+finetuning_type: lora
+lora_rank: 8
+lora_target: all
+pref_beta: 0.1
+pref_loss: sigmoid  # choices: [sigmoid (dpo), orpo, simpo]
+
+### dataset
+dataset: dpo_en_demo
+template: llama3
+cutoff_len: 2048
+max_samples: 1000
+overwrite_cache: true
+preprocessing_num_workers: 16
+dataloader_num_workers: 4
+
+### output
+#output_dir: saves/llama3-8b/lora/dpo
+logging_steps: 10
+#save_steps: 500
+plot_loss: true
+overwrite_output_dir: true
+save_only_model: false
+
+### train
+#per_device_train_batch_size: 1
+#gradient_accumulation_steps: 8
+#learning_rate: 5.0e-6
+#num_train_epochs: 3.0
+lr_scheduler_type: cosine
+warmup_ratio: 0.1
+bf16: true
+ddp_timeout: 180000000
+resume_from_checkpoint: null
+
+### eval
+# eval_dataset: dpo_en_demo
+# val_size: 0.1
+# per_device_eval_batch_size: 1
+# eval_strategy: steps
+# eval_steps: 500

@@ -1,0 +1,215 @@
+:root {
+  --window-border-radius: 10px;
+  --titlebar-height: 32px;
+  --traffic-light-size: 12px;
+  --traffic-light-spacing: 8px;
+  --window-control-size: 46px;
+  --titlebar-bg: rgba(255, 255, 255, 0.9);
+  --titlebar-border: #e5e5e5;
+  --close-hover: #e81123;
+  --close-active: #b81a22;
+  --control-hover: rgba(0, 0, 0, 0.08);
+  --app-border-radius: 8px;
+  --window-control-button-size: 14px;
+  --window-control-button-spacing: 8px;
+  --title-color: #333;
+  --title-bg: rgba(255, 255, 255, 0.9);
+  --border-color: #e5e5e5;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: transparent;
+}
+
+.app-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background-color: #f6f8fa;
+  border-radius: var(--app-border-radius);
+  overflow: hidden;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.1);
+}
+
+/* 标题栏样式 - Win11风格 */
+.app-titlebar {
+  height: var(--titlebar-height);
+  -webkit-app-region: drag; /* 允许拖动窗口 */
+  display: flex;
+  align-items: center;
+  padding: 0 12px;
+  position: relative;
+  z-index: 9999;
+  border-bottom: 1px solid var(--titlebar-border);
+  background-color: var(--titlebar-bg);
+  backdrop-filter: blur(10px);
+  user-select: none;
+  justify-content: space-between;
+  background-color: var(--title-bg);
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* 窗口控制按钮容器 */
+.window-controls {
+  display: flex;
+  margin-left: auto;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+/* Windows 11风格的窗口控制按钮 */
+.window-control-button {
+  width: 46px; /* 宽度足够容纳图标 */
+  height: 32px; /* 匹配标题栏高度 */
+  background: transparent;
+  border: none;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+/* 添加明显的按钮内容 */
+.window-control-button::before,
+.window-control-button::after {
+  content: "";
+  position: absolute;
+  background-color: #555;
+}
+
+.window-control-button.minimize::before {
+  width: 10px;
+  height: 1px;
+}
+
+.window-control-button.maximize::before {
+  width: 10px;
+  height: 10px;
+  border: 1px solid #555;
+  background: transparent;
+}
+
+.window-control-button.close::before,
+.window-control-button.close::after {
+  width: 12px;
+  height: 1px;
+  transform: rotate(45deg);
+}
+
+.window-control-button.close::after {
+  transform: rotate(-45deg);
+}
+
+/* 悬停效果 */
+.window-control-button:hover {
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+.window-control-button.close:hover {
+  background-color: #e81123;
+}
+
+.window-control-button.close:hover::before,
+.window-control-button.close:hover::after {
+  background-color: white;
+}
+
+/* 内容区 */
+.main-content {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+.app-icon-title {
+  margin-left: 65px; /* 为window-controls留出空间 */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: 12px;
+  gap: 8px;
+}
+
+.app-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.app-title {
+  font-weight: 500;
+  font-size: 12px;
+  color: #444;
+  color: var(--title-color);
+}
+
+/* 头部控制区域 */
+.header-controls {
+  margin-left: auto;
+  display: flex;
+  -webkit-app-region: no-drag; /* 按钮区域不可拖动 */
+  margin-right: 10px;
+}
+
+.header-controls button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #555;
+  padding: 5px;
+  border-radius: 4px;
+  background: transparent;
+  padding: 6px;
+  color: #616161;
+}
+
+.header-controls button:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+  background-color: var(--control-hover);
+}
+
+/* 主内容区样式 */
+.main-container {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+/* 适配深色主题 */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --titlebar-bg: rgba(32, 32, 32, 0.9);
+    --titlebar-border: #333;
+    --control-hover: rgba(255, 255, 255, 0.1);
+  }
+  
+  .app-title {
+    color: #e0e0e0;
+  }
+  
+  .window-control-button {
+    color: #d0d0d0;
+  }
+}
+
+/* 调试代码 - 添加边框来显示元素位置 */
+.app-titlebar {
+  border: 1px solid red;
+}
+
+.debug .app-titlebar {
+  border: 1px solid red;
+}
+.debug .window-controls {
+  border: 1px solid blue;
+}
+.debug .window-control-button {
+  border: 1px solid green;
+}

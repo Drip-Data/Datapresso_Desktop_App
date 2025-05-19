@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- 开发环境CSP -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; font-src 'self' https://cdn.jsdelivr.net data:; img-src 'self' data:;">
+    <title>Datapresso Desktop</title>
+    <link rel="stylesheet" href="./css/main.css">
+    <link rel="stylesheet" href="./css/components.css">
+    <link rel="stylesheet" href="./css/themes/light.css" id="theme-stylesheet">
+    <link rel="stylesheet" href="./css/titlebar.css">
+    <!-- 修改：使用本地托管的字体文件代替CDN -->
+    <link rel="stylesheet" href="./assets/fonts/remixicon/remixicon.css">
+    <link rel="stylesheet" href="./css/components/quality-assessment.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- 移除debug类 -->
+        <!-- 标题栏 - Win11风格 -->
+        <div class="app-titlebar">
+            <!-- 应用图标和标题 -->
+            <div class="app-icon-title">
+                <img src="./assets/images/logo.png" alt="Datapresso Logo" class="app-icon">
+                <div class="app-title">Datapresso Desktop</div>
+            </div>
+            
+            <!-- 窗口控制按钮 -->
+            <div class="window-controls">
+                <button class="window-control-button minimize" id="minimize-button"></button>
+                <button class="window-control-button maximize" id="maximize-button"></button>
+                <button class="window-control-button close" id="close-button"></button>
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="main-container">
+            <!-- 侧边导航栏 -->
+            <nav class="sidebar">
+                <ul class="nav-list">
+                    <li class="nav-item active" data-target="dashboard">
+                        <i class="ri-dashboard-line"></i>
+                        <span>仪表盘</span>
+                    </li>
+                    <li class="nav-item" data-target="data-filtering">
+                        <i class="ri-filter-3-line"></i>
+                        <span>数据过滤</span>
+                    </li>
+                    <li class="nav-item" data-target="data-generation">
+                        <i class="ri-database-2-line"></i>
+                        <span>数据生成</span>
+                    </li>
+                    <li class="nav-item" data-target="evaluation">
+                        <i class="ri-bar-chart-line"></i>
+                        <span>评估</span>
+                    </li>
+                    <li class="nav-item" data-target="llamafactory">
+                        <i class="ri-robot-line"></i>
+                        <span>LlamaFactory</span>
+                    </li>
+                    <li class="nav-item" data-target="llm-api">
+                        <i class="ri-message-3-line"></i>
+                        <span>LLM API</span>
+                    </li>
+                    <li class="nav-item" data-target="quality-assessment">
+                        <i class="ri-shield-check-line"></i>
+                        <span>质量评估</span>
+                    </li>
+                    <li class="separator"></li>
+                    <li class="nav-item" data-target="tasks">
+                        <i class="ri-task-line"></i>
+                        <span>任务管理</span>
+                    </li>
+                    <li class="nav-item" data-target="settings">
+                        <i class="ri-settings-line"></i>
+                        <span>设置</span>
+                    </li>
+                </ul>
+            </nav>
+
+            <!-- 内容区域 -->
+            <main class="content-area">
+                <!-- 仪表盘页面 -->
+                <section id="dashboard" class="page active">
+                    <div class="page-header">
+                        <h2>仪表盘</h2>
+                    </div>
+                    <div class="dashboard-grid">
+                        <div class="dashboard-card summary-card">
+                            <h3>数据概览</h3>
+                            <div class="card-content">
+                                <div class="stat-item">
+                                    <span class="stat-label">项目总数</span>
+                                    <span class="stat-value" id="total-projects">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">数据集总数</span>
+                                    <span class="stat-value" id="total-datasets">0</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">LLM请求总数</span>
+                                    <span class="stat-value" id="total-llm-requests">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dashboard-card recent-card">
+                            <h3>最近项目</h3>
+                            <div class="card-content" id="recent-projects-list">
+                                <div class="empty-state">
+                                    <i class="ri-folder-line"></i>
+                                    <p>暂无最近项目</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dashboard-card tasks-card">
+                            <h3>活动任务</h3>
+                            <div class="card-content" id="active-tasks-list">
+                                <div class="empty-state">
+                                    <i class="ri-task-line"></i>
+                                    <p>暂无活动任务</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="dashboard-card stats-card">
+                            <h3>系统状态</h3>
+                            <div class="card-content">
+                                <div class="stat-item">
+                                    <span class="stat-label">后端状态</span>
+                                    <span class="stat-value" id="backend-status">检查中...</span>
+                                </div>
+                                <div class="stat-item">
+                                    <span class="stat-label">API密钥</span>
+                                    <span class="stat-value" id="api-key-status">检查中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- 数据过滤页面 -->
+                <section id="data-filtering" class="page">
+                    <div class="page-header">
+                        <h2>数据过滤</h2>
+                    </div>
+                    <div class="module-container" id="data-filtering-container">
+                        <!-- 数据过滤内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- 数据生成页面 -->
+                <section id="data-generation" class="page">
+                    <div class="page-header">
+                        <h2>数据生成</h></div>
+                    <div class="module-container" id="data-generation-container">
+                        <!-- 数据生成内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- 评估页面 -->
+                <section id="evaluation" class="page">
+                    <div class="page-header">
+                        <h2>评估</h2>
+                    </div>
+                    <div class="module-container" id="evaluation-container">
+                        <!-- 评估内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- LlamaFactory页面 -->
+                <section id="llamafactory" class="page">
+                    <div class="page-header">
+                        <h2>LlamaFactory</h2>
+                    </div>
+                    <div class="module-container" id="llamafactory-container">
+                        <!-- LlamaFactory内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- LLM API页面 -->
+                <section id="llm-api" class="page">
+                    <div class="page-header">
+                        <h2>LLM API</h2>
+                    </div>
+                    <div class="module-container" id="llm-api-container">
+                        <!-- LLM API内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- 质量评估页面 -->
+                <section id="quality-assessment" class="page">
+                    <div class="page-header">
+                        <h2>质量评估</h2>
+                    </div>
+                    <div class="module-container" id="quality-assessment-container">
+                        <!-- 质量评估内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- 任务管理页面 -->
+                <section id="tasks" class="page">
+                    <div class="page-header">
+                        <h2>任务管理</h2>
+                    </div>
+                    <div class="module-container" id="tasks-container">
+                        <!-- 任务管理内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+                
+                <!-- 设置页面 -->
+                <section id="settings" class="page">
+                    <div class="page-header">
+                        <h2>设置</h2>
+                    </div>
+                    <div class="module-container" id="settings-container">
+                        <!-- 设置内容将在JavaScript中动态生成 -->
+                    </div>
+                </section>
+            </main>
+        </div>
+        
+        <!-- 应用程序状态栏 -->
+        <footer class="app-footer">
+            <div class="status-bar">
+                <span id="status-message">就绪</span>
+            </div>
+            <div class="footer-info">
+                <span id="version-info">Datapresso Desktop v1.0.0</span>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- 通知系统 -->
+    <div id="notification-container"></div>
+    
+    <!-- 对话框容器 -->
+    <div id="dialog-overlay" class="hidden">
+        <div id="dialog-container"></div>
+    </div>
+    
+    <!-- JavaScript引入 -->
+    <script src="./js/utils.js"></script>
+    <script src="./js/api.js"></script>
+    <script src="./js/ui.js"></script>
+    <!-- 模块脚本 -->
+    <script src="./js/modules/dashboard.js"></script>
+    <script src="./js/modules/data-filtering.js"></script>
+    <script src="./js/modules/data-generation.js"></script>
+    <script src="./js/modules/evaluation.js"></script>
+    <script src="./js/modules/llamafactory.js"></script>
+    <script src="./js/modules/llm-api.js"></script>
+    <script src="./js/modules/quality-assessment.js"></script>
+    <script src="./js/modules/tasks.js"></script>
+    <script src="./js/modules/settings.js"></script>
+    <script src="./js/app.js"></script>
+    
+    <!-- 图表库 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.3.0/dist/echarts.min.js"></script>
+    
+    <!-- 在其他脚本之前添加 -->
+    <script src="./js/font-fixer.js"></script>
+    
+    <!-- 窗口控制逻辑 - 保留核心功能，移除调试代码 -->
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // 关闭按钮
+            const closeButton = document.getElementById('close-button');
+            if (closeButton && window.electronAPI) {
+                closeButton.addEventListener('click', () => {
+                    window.electronAPI.closeWindow();
+                });
+            }
+            
+            // 最小化按钮
+            const minButton = document.getElementById('minimize-button');
+            if (minButton && window.electronAPI) {
+                minButton.addEventListener('click', () => {
+                    window.electronAPI.minimizeWindow();
+                });
+            }
+            
+            // 最大化/还原按钮
+            const maxButton = document.getElementById('maximize-button');
+            if (maxButton && window.electronAPI) {
+                maxButton.addEventListener('click', () => {
+                    window.electronAPI.toggleMaximizeWindow();
+                });
+            }
+        });
+    </script>
+</body>
+</html>

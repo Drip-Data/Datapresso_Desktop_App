@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Datapresso 开发仪表板</title>
+  <link rel="stylesheet" href="./css/main.css">
+  <style>
+    /* 开发仪表板样式 */
+    .dev-dashboard {
+      padding: 20px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+    
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .status-card {
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      position: relative;
+    }
+    
+    .status-card.stable {
+      background-color: #e6f7e6;
+      border-left: 4px solid #28a745;
+    }
+    
+    .status-card.in-progress {
+      background-color: #e6f0ff;
+      border-left: 4px solid #007bff;
+    }
+    
+    .status-card.in-development {
+      background-color: #fff8e6;
+      border-left: 4px solid #ffc107;
+    }
+    
+    .status-card.planned {
+      background-color: #f2f2f2;
+      border-left: 4px solid #6c757d;
+    }
+    
+    .progress-container {
+      height: 8px;
+      background-color: rgba(0,0,0,0.1);
+      border-radius: 4px;
+      margin: 10px 0;
+      overflow: hidden;
+    }
+    
+    .progress-bar {
+      height: 100%;
+      background-color: #007bff;
+    }
+    
+    .stable .progress-bar {
+      background-color: #28a745;
+    }
+    
+    .in-development .progress-bar {
+      background-color: #ffc107;
+    }
+    
+    .progress-text {
+      font-size: 0.8rem;
+      color: #666;
+    }
+    
+    .status-badge {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      font-size: 0.7rem;
+      padding: 3px 8px;
+      border-radius: 10px;
+      background-color: #f8f9fa;
+    }
+    
+    .api-tester, .component-preview-area {
+      padding: 20px;
+      background-color: #f8f9fa;
+      border-radius: 8px;
+      margin-bottom: 30px;
+    }
+    
+    .form-group {
+      margin-bottom: 15px;
+    }
+    
+    .form-control {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+    }
+    
+    .btn {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    .btn-primary {
+      background-color: #007bff;
+      color: white;
+    }
+    
+    .component-selector {
+      margin-bottom: 20px;
+    }
+    
+    .test-module-btn {
+      margin-top: 10px;
+      padding: 4px 8px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <header class="app-header">
+      <h1>Datapresso 开发仪表板</h1>
+      <div class="header-controls">
+        <button id="go-to-app" title="返回主应用">
+          <i class="ri-arrow-left-line"></i> 返回主应用
+        </button>
+      </div>
+    </header>
+    
+    <main id="dev-dashboard-container" class="content-area">
+      <!-- 开发仪表板将在这里渲染 -->
+    </main>
+    
+    <footer class="app-footer">
+      <div class="status-bar">
+        <span id="status-message">开发模式</span>
+      </div>
+      <div class="footer-info">
+        <span id="version-info">Datapresso Desktop v1.0.0-dev</span>
+      </div>
+    </footer>
+  </div>
+
+  <script type="module">
+    import DevDashboard from './js/dev-dashboard.js';
+    
+    document.addEventListener('DOMContentLoaded', () => {
+      // 初始化开发仪表板
+      new DevDashboard('dev-dashboard-container');
+      
+      // 返回主应用按钮
+      document.getElementById('go-to-app').addEventListener('click', () => {
+        window.location.href = './index.html';
+      });
+    });
+  </script>
+</body>
+</html>

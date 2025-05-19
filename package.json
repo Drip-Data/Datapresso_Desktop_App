@@ -1,0 +1,57 @@
+{
+  "name": "datapresso-desktop",
+  "version": "1.0.0",
+  "description": "Datapresso Desktop Application",
+  "main": "electron-app/main/main.js",
+  "scripts": {
+    "start": "node scripts/start.js",
+    "dev:react": "cd electron-app/renderer/new-datapresso-interface && npm run dev",
+    "build:react": "cd electron-app/renderer/new-datapresso-interface && npm run build",
+    "dev:electron": "electron .",
+    "build": "npm run build:react && electron-builder",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^24.9.1",
+    "wait-on": "^7.2.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "cross-spawn": "^7.0.3",
+    "electron-log": "^5.0.1",
+    "electron-store": "^8.1.0",
+    "fs-extra": "^11.1.1"
+  },
+  "build": {
+    "appId": "com.datapresso.desktop",
+    "productName": "Datapresso Desktop",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron-app/**/*",
+      "!electron-app/renderer/new-datapresso-interface/node_modules/**/*",
+      "!electron-app/renderer/new-datapresso-interface/src/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "python-backend",
+        "to": "python-backend",
+        "filter": ["**/*", "!__pycache__/**/*", "!*.pyc"]
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
+  }
+}
