@@ -1,0 +1,18 @@
+{
+  "report_id": "5d9bb085-6c54-4514-bcee-5dff79871405",
+  "timestamp": "20250524_232407",
+  "overall_score": 1.0,
+  "summary": {
+    "assessed_items": 2,
+    "assessed_dimensions": 3,
+    "passed_dimensions": 3,
+    "failed_dimensions": 0,
+    "top_issues": []
+  },
+  "dimension_assessments": [
+    {
+      "dimension": "completeness",
+      "score": 1.0,
+      "weighted_score": 0.3333333333333333,
+      "weight": 0.3333333333333333,
+      "passed": 

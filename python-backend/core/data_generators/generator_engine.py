@@ -4,6 +4,7 @@ import logging
 import string
 import re
 import math
+import numpy as np
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime, timedelta
 import uuid
@@ -63,31 +64,38 @@ class GeneratorEngine:
         Returns:
             生成的数据列表
         """
-        if generation_method not in self.generation_methods:
-            logger.warning(f"未知的生成方法: {generation_method}，使用模板生成替代")
-            generation_method = "template"
-        
-        # 设置随机种子以确保可重复结果（如果提供）
-        random_seed = kwargs.get('random_seed')
-        if random_seed is not None:
-            random.seed(random_seed)
-            fake.seed_instance(random_seed)
-        
-        # 调用相应的生成方法
-        generator_func = self.generation_methods[generation_method]
-        generated_data = generator_func(count, **kwargs)
-        
-        # 应用约束条件（如果有）
-        field_constraints = kwargs.get('field_constraints')
-        if field_constraints:
-            generated_data = self.apply_constraints(generated_data, field_constraints)
-        
-        # 重置随机种子
-        if random_seed is not None:
-            random.seed()
-            fake.seed_instance()
-        
-        return generated_data
+        try:
+            if generation_method not in self.generation_methods:
+                logger.warning(f"未知的生成方法: {generation_method}，使用模板生成替代")
+                generation_method = "template"
+            
+            # 设置随机种子以确保可重复结果（如果提供）
+            random_seed = kwargs.get('random_seed')
+            if random_seed is not None:
+                random.seed(random_seed)
+                fake.seed_instance(random_seed)
+            
+            # 调用相应的生成方法
+            logger.debug(f"Calling generator function: {generation_method}")
+            generator_func = self.generation_methods[generation_method]
+            generated_data = generator_func(count, **kwargs)
+            
+            # 应用约束条件（如果有）
+            field_constraints = kwargs.get('field_constraints')
+            if field_constraints:
+                logger.debug(f"Applying {len(field_constraints)} constraints.")
+                generated_data = self.apply_constraints(generated_data, field_constraints)
+            
+            # 重置随机种子
+            if random_seed is not None:
+                random.seed()
+                fake.seed_instance()
+            
+            logger.debug(f"Successfully generated {len(generated_data)} items.")
+            return generated_data
+        except Exception as e:
+            logger.exception(f"Error in GeneratorEngine.generate_data for method '{generation_method}': {e}")
+            raise # Re-raise the exception after logging
     
     def generate_from_template(
         self,
@@ -1090,6 +1098,110 @@ class GeneratorEngine:
     def _generate_uuid(self, params: Dict[str, Any]) -> str:
         """生成UUID"""
         return str(uuid.uuid4())
+
+    def _calculate_stats(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        计算生成数据的基本统计信息。
+        Args:
+            data: 生成的数据列表。
+        Returns:
+            包含统计信息的字典。
+        """
+        total_records = len(data)
+        
+        field_distributions = {}
+        unique_values_count = {}
+        min_max_values = {}
+        null_counts = {}
+
+        if not data:
+            return {
+                "total_records": total_records,
+                "field_distributions": field_distributions,
+                "unique_values_count": unique_values_count,
+                "min_max_values": min_max_values,
+                "null_counts": null_counts
+            }
+
+        all_fields = set()
+        for record in data:
+            all_fields.update(record.keys())
+
+        for field in all_fields:
+            field_values = [record.get(field) for record in data if field in record]
+            non_null_values = [v for v in field_values if v is not None]
+            
+            null_counts[field] = len(field_values) - len(non_null_values)
+
+            if not non_null_values:
+                field_distributions[field] = {"type": "null", "message": "所有值都为空"}
+                unique_values_count[field] = 0
+                min_max_values[field] = {"min": None, "max": None}
+                continue
+
+            # 推断类型并计算统计信息
+            inferred_type = "unknown"
+            if non_null_values:
+                first_val = non_null_values[0]
+                if isinstance(first_val, (int, float)):
+                    inferred_type = "numeric"
+                elif isinstance(first_val, str):
+                    inferred_type = "string"
+                elif isinstance(first_val, bool):
+                    inferred_type = "boolean"
+                elif isinstance(first_val, (list, dict)):
+                    inferred_type = "complex"
+
+            if inferred_type == "numeric":
+                numeric_values = [v for v in non_null_values if isinstance(v, (int, float))]
+                if numeric_values:
+                    field_distributions[field] = {
+                        "type": "numeric",
+                        "mean": sum(numeric_values) / len(numeric_values),
+                        "median": sorted(numeric_values)[len(numeric_values) // 2],
+                        "std_dev": np.std(numeric_values) if len(numeric_values) > 1 else 0.0
+                    }
+                    min_max_values[field] = {"min": min(numeric_values), "max": max(numeric_values)}
+                    unique_values_count[field] = len(set(numeric_values))
+                else:
+                    field_distributions[field] = {"type": "numeric", "message": "无有效数值"}
+                    unique_values_count[field] = 0
+                    min_max_values[field] = {"min": None, "max": None}
+            elif inferred_type == "string":
+                value_counts = {}
+                for v in non_null_values:
+                    value_counts[v] = value_counts.get(v, 0) + 1
+                
+                field_distributions[field] = {
+                    "type": "categorical" if len(value_counts) <= min(10, len(non_null_values) // 2) else "text",
+                    "distribution": {k: v / len(non_null_values) for k, v in value_counts.items()},
+                    "most_common": max(value_counts, key=value_counts.get) if value_counts else None,
+                    "avg_length": sum(len(str(s)) for s in non_null_values) / len(non_null_values)
+                }
+                unique_values_count[field] = len(value_counts)
+                min_max_values[field] = {"min": None, "max": None} # Not applicable for strings in this context
+            elif inferred_type == "boolean":
+                true_count = sum(1 for v in non_null_values if v is True)
+                false_count = sum(1 for v in non_null_values if v is False)
+                field_distributions[field] = {
+                    "type": "boolean",
+                    "true_ratio": true_count / len(non_null_values),
+                    "false_ratio": false_count / len(non_null_values)
+                }
+                unique_values_count[field] = len(set(non_null_values))
+                min_max_values[field] = {"min": None, "max": None}
+            else: # Complex or unknown types
+                field_distributions[field] = {"type": inferred_type, "message": "复杂类型或未知类型"}
+                unique_values_count[field] = len(set(str(v) for v in non_null_values))
+                min_max_values[field] = {"min": None, "max": None}
+
+        return {
+            "total_records": total_records,
+            "field_distributions": field_distributions,
+            "unique_values_count": unique_values_count,
+            "min_max_values": min_max_values,
+            "null_counts": null_counts
+        }
 
 # 创建全局生成引擎实例
 generator_engine = GeneratorEngine()

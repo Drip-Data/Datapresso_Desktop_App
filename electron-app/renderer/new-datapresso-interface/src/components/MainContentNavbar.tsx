@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { Zap, Database, Brain, KeyRound, Settings, HelpCircle, BarChart3, Filter } from 'lucide-react'; // Added more icons
+import { Zap, Database, Brain, KeyRound, Settings, HelpCircle, BarChart3, Filter, TestTube, PlayCircle } from 'lucide-react'; // Added PlayCircle icon
 
 interface NavItem {
   to: string;
@@ -14,6 +14,8 @@ const navItems: NavItem[] = [
   { to: '/data-quality', label: '数据质量', icon: BarChart3 }, // Assuming a route and icon
   { to: '/training', label: '模型训练', icon: Brain },
   { to: '/api-keys', label: 'API密钥管理', icon: KeyRound },
+  { to: '/module-test', label: '模块测试', icon: TestTube }, // Added module test navigation
+  { to: '/end-to-end-test', label: '端到端测试', icon: PlayCircle }, // Added end-to-end test navigation
   // { to: '/settings', label: '系统设置', icon: Settings }, // Settings might be elsewhere or part of user menu
   // { to: '/help', label: '帮助中心', icon: HelpCircle }, // Help might be elsewhere
 ];

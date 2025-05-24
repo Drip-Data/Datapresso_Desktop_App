@@ -5,10 +5,33 @@ import WorkflowActionsCard from '@/components/WorkflowActionsCard';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { AlertCircle, PlayCircle, FolderOpen, CheckSquare, ListChecks, Activity } from 'lucide-react';
+import { AlertCircle, PlayCircle, FolderOpen, CheckSquare, ListChecks, Activity, Eye, Trash2 } from 'lucide-react';
 import PipelineStageItem, { examplePipelineStages, PipelineStage } from '@/components/PipelineStageItem';
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog"; // Import Dialog components
+import {
+  createGenerationTask,
+  listGenerationTasks,
+  getGenerationTask,
+  controlGenerationTask,
+  createAssessmentTask,
+  listAssessmentTasks,
+  getAssessmentTask,
+  applyDataFiltering,
+  listFilteringTasks,
+  getFilteringTask,
+  getTaskStatus,
+  getTaskLogs
+} from '@/utils/apiAdapter';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -205,6 +228,223 @@ const ExecChart: React.FC<ExecChartProps> = ({ chartId, chartType, labels, datas
 };
 
 
+// Task Management Component
+const TaskManagementSection = () => {
+  const [tasks, setTasks] = useState<any[]>([]);
+  const [selectedTaskType, setSelectedTaskType] = useState<'generation' | 'assessment' | 'filtering'>('generation');
+  const [loading, setLoading] = useState(false);
+  const [isLogsModalOpen, setIsLogsModalOpen] = useState(false);
+  const [currentTaskLogs, setCurrentTaskLogs] = useState<LogEntry[]>([]);
+  const [currentTaskLogId, setCurrentTaskLogId] = useState<string | null>(null);
+
+  // Fetch tasks based on selected type
+  const fetchTasks = useCallback(async () => {
+    setLoading(true);
+    try {
+      let result;
+      switch (selectedTaskType) {
+        case 'generation':
+          result = await listGenerationTasks({ page: 1, pageSize: 20 });
+          break;
+        case 'assessment':
+          result = await listAssessmentTasks({ page: 1, pageSize: 20 });
+          break;
+        case 'filtering':
+          result = await listFilteringTasks({ page: 1, pageSize: 20 });
+          break;
+      }
+      
+      if (result && result.data && Array.isArray(result.data.items)) {
+        setTasks(result.data.items);
+        toast.success(`成功加载 ${result.data.items.length} 个${selectedTaskType}任务`);
+      } else {
+        setTasks([]);
+        toast.warning(`没有找到${selectedTaskType}任务`);
+      }
+    } catch (error: any) {
+      console.error(`Error fetching ${selectedTaskType} tasks:`, error);
+      toast.error(`加载${selectedTaskType}任务失败: ${error.message}`);
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedTaskType]);
+
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  const handleControlTask = async (taskId: string, action: 'pause' | 'resume' | 'cancel') => {
+    try {
+      if (selectedTaskType === 'generation') {
+        await controlGenerationTask(taskId, action);
+        toast.success(`任务 ${taskId} ${action} 操作成功`);
+        fetchTasks(); // Refresh tasks
+      } else {
+        toast.warning(`${selectedTaskType}任务暂不支持${action}操作`);
+      }
+    } catch (error: any) {
+      console.error(`Error controlling task ${taskId}:`, error);
+      toast.error(`任务控制失败: ${error.message}`);
+    }
+  };
+
+  const handleViewLogs = async (taskId: string, taskType: 'generation' | 'assessment' | 'filtering') => {
+    setCurrentTaskLogId(taskId);
+    setIsLogsModalOpen(true);
+    setCurrentTaskLogs([]); // Clear previous logs
+    toast.info(`正在加载任务 ${taskId} 的日志...`);
+    try {
+      // getTaskLogs expects taskId and an optional params object, not taskType as a direct argument.
+      // Assuming taskType is handled by the backend routing or not strictly needed for fetching logs.
+      const result = await getTaskLogs(taskId); // Corrected: Removed taskType from arguments
+      if (result && result.logs && Array.isArray(result.logs)) {
+        setCurrentTaskLogs(result.logs.map((log: any) => ({
+          time: new Date(log.timestamp).toLocaleTimeString(),
+          type: log.level.toLowerCase(),
+          message: log.message
+        })));
+        toast.success(`成功加载任务 ${taskId} 的日志`);
+      } else {
+        toast.warning(`没有找到任务 ${taskId} 的日志`);
+      }
+    } catch (error: any) {
+      console.error(`Error fetching logs for task ${taskId}:`, error);
+      toast.error(`加载任务日志失败: ${error.message}`);
+    }
+  };
+
+  const getTaskStatusClass = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'running': return 'bg-blue-100 text-blue-800';
+      case 'completed': return 'bg-green-100 text-green-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      case 'paused': return 'bg-yellow-100 text-yellow-800';
+      case 'pending': return 'bg-gray-100 text-gray-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getLogTypeClass = (type: LogEntry['type']) => {
+    if (type === 'success') return 'text-green-400';
+    if (type === 'info') return 'text-blue-300';
+    if (type === 'warning') return 'text-yellow-300';
+    if (type === 'error') return 'text-red-400';
+    return 'text-slate-400';
+  }
+
+  return (
+    <div className={cardClass}>
+      <div className={cardHeaderClass}>
+        <h3 className="text-lg font-semibold text-text-primary-html flex items-center">
+          <ListChecks size={20} className="mr-2 text-primary-dark" />
+          任务管理
+        </h3>
+        <div className="flex items-center space-x-2">
+          <Select value={selectedTaskType} onValueChange={(value: 'generation' | 'assessment' | 'filtering') => setSelectedTaskType(value)}>
+            <SelectTrigger className="w-40">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="generation">数据生成任务</SelectItem>
+              <SelectItem value="assessment">质量评估任务</SelectItem>
+              <SelectItem value="filtering">数据筛选任务</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={fetchTasks} disabled={loading}>
+            刷新
+          </Button>
+        </div>
+      </div>
+      <div className={cardBodyClass}>
+        {loading ? (
+          <div className="text-center py-8 text-text-secondary-html">加载任务中...</div>
+        ) : tasks.length === 0 ? (
+          <div className="text-center py-8 text-text-secondary-html">暂无{selectedTaskType}任务</div>
+        ) : (
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <div key={task.taskId || task.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+                <div className="flex-1">
+                  <div className="flex items-center space-x-3">
+                    <span className="font-medium text-text-primary-html">
+                      {task.taskName || task.name || `${selectedTaskType}任务`}
+                    </span>
+                    <span className={`px-2 py-1 text-xs font-semibold rounded-full ${getTaskStatusClass(task.status)}`}>
+                      {task.status || '未知'}
+                    </span>
+                    {task.progress && (
+                      <span className="text-sm text-text-secondary-html">
+                        进度: {Math.round(task.progress * 100)}%
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm text-text-secondary-html mt-1">
+                    任务ID: {task.taskId || task.id} | 创建时间: {task.createdAt ? new Date(task.createdAt).toLocaleString() : 'N/A'}
+                  </div>
+                </div>
+                <div className="flex items-center space-x-1">
+                  <Button variant="ghost" size="sm" title="查看详情" onClick={() => toast.info(`查看任务 ${task.taskId || task.id} 详情`)}>
+                    <Eye size={16} />
+                  </Button>
+                  {task.status === 'running' && (
+                    <Button variant="ghost" size="sm" title="暂停任务" onClick={() => handleControlTask(task.taskId || task.id, 'pause')}>
+                      暂停
+                    </Button>
+                  )}
+                  {task.status === 'paused' && (
+                    <Button variant="ghost" size="sm" title="继续任务" onClick={() => handleControlTask(task.taskId || task.id, 'resume')}>
+                      继续
+                    </Button>
+                  )}
+                  {(task.status === 'running' || task.status === 'paused') && (
+                    <Button variant="ghost" size="sm" title="取消任务" onClick={() => handleControlTask(task.taskId || task.id, 'cancel')}>
+                      取消
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" title="查看日志" onClick={() => handleViewLogs(task.taskId || task.id, selectedTaskType)}>
+                    <Eye size={16} />
+                  </Button>
+                  <Button variant="ghost" size="sm" title="删除任务" onClick={() => toast.info(`删除任务功能待实现`)}>
+                    <Trash2 size={16} />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Task Logs Modal */}
+      <Dialog open={isLogsModalOpen} onOpenChange={setIsLogsModalOpen}>
+        <DialogContent className="sm:max-w-3xl max-h-[80vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>任务日志: {currentTaskLogId}</DialogTitle>
+          </DialogHeader>
+          <div className="flex-grow overflow-y-auto p-1 bg-slate-900 rounded-md">
+            {currentTaskLogs.length === 0 ? (
+              <p className="text-slate-400 text-xs italic p-4">暂无日志...</p>
+            ) : (
+              currentTaskLogs.map((log, index) => (
+                <div key={index} className="text-xs font-mono mb-0.5">
+                  <span className="text-slate-500 mr-2">{log.time}</span>
+                  <span className={getLogTypeClass(log.type)}>{log.type.toUpperCase()}:</span>
+                  <span className="text-slate-300 ml-1">{log.message}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <DialogFooter className="mt-auto pt-4">
+            <DialogClose asChild>
+              <Button type="button" variant="outline">关闭</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+};
+
 const ExecutionMonitorSection = () => {
   const [executionMode, setExecutionMode] = useState<string>("sequential");
   const [executionName, setExecutionName] = useState<string>(`LIMO流程执行-${new Date().toISOString().split('T')[0]}`);
@@ -333,7 +573,6 @@ const ExecutionMonitorSection = () => {
           
           {/* Execution Monitor Section */}
           <div className="space-y-6">
-            <div className="flex items-center text-lg font-semibold text-text-primary-html"><Activity size={20} className="mr-2 text-primary-dark" />执行监控</div>
             <div className={cardClass}>
               <div className={`${cardHeaderClass} bg-slate-50/70`}><h4 className="font-semibold text-text-primary-html">当前执行状态</h4><span className={`px-2.5 py-1 text-xs font-semibold rounded-full ${(currentExecStatus.overallProgress ?? 0) < 100 && (currentExecStatus.overallProgress ?? 0) > 0 ? 'bg-primary-dark/10 text-primary-dark animate-pulse' : 'bg-green-100 text-green-700'}`}>{ (currentExecStatus.overallProgress ?? 0) < 100 && (currentExecStatus.overallProgress ?? 0) > 0 ? '运行中' : '空闲/已完成'}</span></div>
               <div className={cardBodyClass}>
@@ -367,7 +606,6 @@ const ExecutionMonitorSection = () => {
   );
 };
 
-
 const DatapressoWorkflowPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState("design"); 
 
@@ -377,8 +615,8 @@ const DatapressoWorkflowPage: React.FC = () => {
         <div className="space-y-6 lg:space-y-8">
           <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
             <TabsList className="grid w-full grid-cols-2 mb-6 sticky top-0 z-10 bg-white/90 backdrop-blur-sm shadow-sm">
-              <TabsTrigger value="design" className="py-3 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-html data-[state=active]:text-primary-html rounded-none">Pipeline 设计与配置</TabsTrigger>
-              <TabsTrigger value="execute" className="py-3 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-html data-[state=active]:text-primary-html rounded-none">执行与监控</TabsTrigger>
+              <TabsTrigger value="design" className="py-3 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-html data-[state=active]:text-primary-html rounded-none" data-active={activeTab === 'design' ? 'true' : 'false'}>Pipeline 设计与配置</TabsTrigger>
+              <TabsTrigger value="execute" className="py-3 data-[state=active]:shadow-none data-[state=active]:border-b-2 data-[state=active]:border-primary-html data-[state=active]:text-primary-html rounded-none" data-active={activeTab === 'execute' ? 'true' : 'false'}>执行与监控</TabsTrigger>
             </TabsList>
             <TabsContent value="design" className="mt-0">
               <div className="space-y-6 lg:space-y-8">
@@ -386,7 +624,12 @@ const DatapressoWorkflowPage: React.FC = () => {
                 <WorkflowActionsCard onSwitchToExecuteTab={() => setActiveTab('execute')} />
               </div>
             </TabsContent>
-            <TabsContent value="execute" className="mt-0"><ExecutionMonitorSection /></TabsContent>
+            <TabsContent value="execute" className="mt-0">
+              <div className="space-y-6">
+                <ExecutionMonitorSection />
+                <TaskManagementSection />
+              </div>
+            </TabsContent>
           </Tabs>
         </div>
     //   </ProjectProvider>

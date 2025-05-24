@@ -5,8 +5,15 @@ from sqlalchemy import select, update as sqlalchemy_update, delete as sqlalchemy
 from sqlalchemy.future import select as future_select # For potential Pydantic v2 compatibility if needed later
 
 # Import SQLAlchemy models
-from .models import Project, Dataset, Task, Filter as OrmFilter, Evaluation, Model as OrmModel 
-# Renamed Filter to OrmFilter and Model to OrmModel to avoid conflict with Python built-ins if any in this scope
+from .models import (
+    ProjectConfig, # Renamed from Project
+    # Dataset, # Removed as no direct ORM model for Dataset yet
+    Task,
+    FilteringTask as OrmFilter, # Renamed from Filter
+    AssessmentTask as Evaluation, # Renamed from Evaluation
+    LLMProvider as OrmModel, # Renamed from Model
+    SeedData
+)
 
 # Import Pydantic schemas
 import schemas # Changed to direct import as python-backend is the top-level when running main.py
@@ -100,29 +107,39 @@ async def delete_task(db: AsyncSession, task_id: str) -> Optional[Task]: # Chang
     await db.commit()
     return db_task
 
-# === Project Operations ===
+# === ProjectConfig Operations (formerly Project) ===
 
-async def create_project(db: AsyncSession, project_in: schemas.ProjectCreate) -> Project:
-    db_project = Project(**project_in.dict())
+async def create_project_config(db: AsyncSession, project_in: schemas.ProjectCreate) -> ProjectConfig: # Renamed function and return type
+    db_project = ProjectConfig(
+        id=project_in.id, # Ensure ID is passed if available from schema
+        project_name=project_in.name, # Map name to project_name
+        description=project_in.description,
+        config_data=project_in.config
+    )
     db.add(db_project)
     await db.commit()
     await db.refresh(db_project)
     return db_project
 
-async def get_project(db: AsyncSession, project_id: str) -> Optional[Project]:
-    result = await db.execute(select(Project).filter(Project.id == project_id))
+async def get_project_config(db: AsyncSession, project_id: str) -> Optional[ProjectConfig]: # Renamed function and return type
+    result = await db.execute(select(ProjectConfig).filter(ProjectConfig.id == project_id))
     return result.scalar_one_or_none()
 
-async def get_projects(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[Project]:
-    query = select(Project).order_by(Project.created_at.desc()).offset(skip).limit(limit)
+async def get_project_configs(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[ProjectConfig]: # Renamed function and return type
+    query = select(ProjectConfig).order_by(ProjectConfig.created_at.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
-async def update_project(db: AsyncSession, project_id: str, project_in: schemas.ProjectUpdate) -> Optional[Project]:
-    db_project = await get_project(db, project_id)
+async def update_project_config(db: AsyncSession, project_id: str, project_in: schemas.ProjectUpdate) -> Optional[ProjectConfig]: # Renamed function and return type
+    db_project = await get_project_config(db, project_id)
     if not db_project:
         return None
     update_data = project_in.dict(exclude_unset=True)
+    if 'name' in update_data:
+        db_project.project_name = update_data.pop('name') # Map name back to project_name
+    if 'config' in update_data:
+        db_project.config_data = update_data.pop('config') # Map config back to config_data
+    
     for key, value in update_data.items():
         setattr(db_project, key, value)
     db.add(db_project)
@@ -130,51 +147,115 @@ async def update_project(db: AsyncSession, project_id: str, project_in: schemas.
     await db.refresh(db_project)
     return db_project
 
-async def delete_project(db: AsyncSession, project_id: str) -> Optional[Project]:
-    db_project = await get_project(db, project_id)
+async def delete_project_config(db: AsyncSession, project_id: str) -> Optional[ProjectConfig]: # Renamed function and return type
+    db_project = await get_project_config(db, project_id)
     if not db_project:
         return None
     await db.delete(db_project) # Cascading delete should handle related items if configured in models
     await db.commit()
     return db_project
 
-# === Dataset Operations ===
+# === Dataset Operations (Placeholder - ORM model not yet defined) ===
+# If Dataset ORM model is created in models.py, uncomment and implement these.
+# For now, these operations are commented out to avoid errors.
 
-async def create_dataset(db: AsyncSession, dataset_in: schemas.DatasetCreate) -> Dataset:
-    db_dataset = Dataset(**dataset_in.dict())
-    db.add(db_dataset)
+# async def create_dataset(db: AsyncSession, dataset_in: schemas.DatasetCreate) -> Dataset:
+#     pass # Implement after Dataset ORM model is defined
+
+# async def get_dataset(db: AsyncSession, dataset_id: str) -> Optional[Dataset]:
+#     pass # Implement after Dataset ORM model is defined
+
+# async def get_datasets_for_project(db: AsyncSession, project_id: str, skip: int = 0, limit: int = 100) -> List[Dataset]:
+#     pass # Implement after Dataset ORM model is defined
+
+# async def update_dataset(db: AsyncSession, dataset_id: str, dataset_in: schemas.DatasetUpdate) -> Optional[Dataset]:
+#     pass # Implement after Dataset ORM model is defined
+
+# async def delete_dataset(db: AsyncSession, dataset_id: str) -> Optional[Dataset]:
+#     pass # Implement after Dataset ORM model is defined
+
+# === SeedData Operations ===
+
+async def create_seed_data(db: AsyncSession, seed_data_in: schemas.SeedDataCreate) -> SeedData:
+    """
+    Create a new seed data entry in the database.
+    """
+    db_seed_data = SeedData(**seed_data_in.dict(exclude_unset=True))
+    db.add(db_seed_data)
     await db.commit()
-    await db.refresh(db_dataset)
-    return db_dataset
+    await db.refresh(db_seed_data)
+    return db_seed_data
 
-async def get_dataset(db: AsyncSession, dataset_id: str) -> Optional[Dataset]:
-    result = await db.execute(select(Dataset).filter(Dataset.id == dataset_id))
+async def get_seed_data(db: AsyncSession, seed_data_id: str) -> Optional[SeedData]:
+    """
+    Get a specific seed data entry by its ID.
+    """
+    result = await db.execute(select(SeedData).filter(SeedData.id == seed_data_id))
     return result.scalar_one_or_none()
 
-async def get_datasets_for_project(db: AsyncSession, project_id: str, skip: int = 0, limit: int = 100) -> List[Dataset]:
-    query = select(Dataset).filter(Dataset.project_id == project_id).order_by(Dataset.created_at.desc()).offset(skip).limit(limit)
+async def get_seed_data_list(
+    db: AsyncSession,
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    data_type: Optional[str] = None
+) -> List[SeedData]:
+    """
+    Get a list of seed data entries, with optional filtering and pagination.
+    """
+    query = select(SeedData)
+    if status:
+        query = query.filter(SeedData.status == status)
+    if data_type:
+        query = query.filter(SeedData.data_type == data_type)
+    
+    query = query.order_by(SeedData.upload_date.desc()).offset(skip).limit(limit)
     result = await db.execute(query)
     return result.scalars().all()
 
-async def update_dataset(db: AsyncSession, dataset_id: str, dataset_in: schemas.DatasetUpdate) -> Optional[Dataset]:
-    db_dataset = await get_dataset(db, dataset_id)
-    if not db_dataset:
-        return None
-    update_data = dataset_in.dict(exclude_unset=True)
-    for key, value in update_data.items():
-        setattr(db_dataset, key, value)
-    db.add(db_dataset)
-    await db.commit()
-    await db.refresh(db_dataset)
-    return db_dataset
+async def get_seed_data_count(
+    db: AsyncSession,
+    status: Optional[str] = None,
+    data_type: Optional[str] = None
+) -> int:
+    """
+    Get the total count of seed data entries, with optional filtering.
+    """
+    query = select(func.count()).select_from(SeedData)
+    if status:
+        query = query.where(SeedData.status == status)
+    if data_type:
+        query = query.where(SeedData.data_type == data_type)
+    result = await db.execute(query)
+    return result.scalar_one()
 
-async def delete_dataset(db: AsyncSession, dataset_id: str) -> Optional[Dataset]:
-    db_dataset = await get_dataset(db, dataset_id)
-    if not db_dataset:
+async def update_seed_data(db: AsyncSession, seed_data_id: str, seed_data_in: schemas.SeedDataUpdate) -> Optional[SeedData]:
+    """
+    Update an existing seed data entry.
+    """
+    db_seed_data = await get_seed_data(db, seed_data_id)
+    if not db_seed_data:
         return None
-    await db.delete(db_dataset)
+    
+    update_data = seed_data_in.dict(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(db_seed_data, key, value)
+    
+    db.add(db_seed_data)
     await db.commit()
-    return db_dataset
+    await db.refresh(db_seed_data)
+    return db_seed_data
+
+async def delete_seed_data(db: AsyncSession, seed_data_id: str) -> Optional[SeedData]:
+    """
+    Delete a seed data entry by its ID.
+    """
+    db_seed_data = await get_seed_data(db, seed_data_id)
+    if not db_seed_data:
+        return None
+    await db.delete(db_seed_data)
+    await db.commit()
+    return db_seed_data
 
 # Placeholder for Filter, Evaluation, Model CRUD operations if needed later
 # For now, the old init_db and its related direct sqlite3 operations for config and llm_usage are removed.

@@ -1,7 +1,7 @@
-import React, { useState, ChangeEvent, useCallback } from 'react';
+import React, { useState, ChangeEvent, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Eye, CheckCircle, Trash2, Upload, Search as SearchIcon, Database, Filter as FilterIcon, Zap, Loader2 } from 'lucide-react'; // Added FilterIcon, Zap, Loader2
+import { Eye, CheckCircle, Trash2, Upload, Search as SearchIcon, Database, Filter as FilterIcon, Zap, Loader2 } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -9,75 +9,134 @@ import {
   DialogTitle,
   DialogFooter,
   DialogClose,
-} from "@/components/ui/dialog"; // Restore Dialog imports
-// import { Label } from '@/components/ui/label'; // Keep others commented for now
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-// import { Checkbox } from '@/components/ui/checkbox';
-import DataStatisticsCard from '@/components/DataStatisticsCard'; // Restore
-import DataProcessingHistoryCard from '@/components/DataProcessingHistoryCard'; // Restore
+} from "@/components/ui/dialog";
+import { toast } from "sonner";
+import DataStatisticsCard from '@/components/DataStatisticsCard';
+import DataProcessingHistoryCard from '@/components/DataProcessingHistoryCard';
 import FilteringConfigPanel, { DataFilteringRequestFrontend } from '@/components/FilteringConfigPanel';
 import GenerationConfigPanel, { GenerationConfigPayload } from '@/components/GenerationConfigPanel';
-import { filterData as apiFilterData, generateData as apiGenerateData } from '@/utils/apiAdapter';
-import { toast } from "sonner"; // Import toast for notifications
+import { filterData as apiFilterData, generateData as apiGenerateData, uploadSeedData as apiUploadSeedData, listSeedData as apiListSeedData, deleteSeedData as apiDeleteSeedData } from '@/utils/apiAdapter'; // Import deleteSeedData
+import { DataFilteringRequest, DataGenerationRequest, FilterOperation, GenerationMethod } from '@/types/api'; // Import types
 
-// Mock data for the table, replace with actual data fetching later
-const mockSeedData = [
-  { id: '1', name: 'example_seed_data.jsonl', records: 1000, size: '2.5 MB', status: '已校验', statusType: 'success', uploadDate: '2024-05-10' },
-  { id: '2', name: 'code_examples.jsonl', records: 500, size: '1.8 MB', status: '已校验', statusType: 'success', uploadDate: '2024-05-09' },
-  { id: '3', name: 'raw_conversations.csv', records: 1200, size: '3.2 MB', status: '待校验', statusType: 'warning', uploadDate: '2024-05-07' },
-  { id: '4', name: 'new_dataset_to_validate.jsonl', records: 750, size: '1.2 MB', status: '新上传', statusType: 'info', uploadDate: '2024-05-14' },
-];
-
-type SeedDataItem = typeof mockSeedData[0];
+// Define the structure of a SeedDataItem based on backend schema
+interface SeedDataItem {
+  id: string;
+  filename: string;
+  savedPath: string;
+  fileSize: number;
+  recordCount: number;
+  dataType?: string;
+  status: string; // e.g., "uploaded", "validated", "indexed", "failed"
+  uploadDate: string; // ISO string
+  updatedAt: string; // ISO string
+}
 
 const DataManagementPage: React.FC = () => {
-  const [originalSeedData, setOriginalSeedData] = useState<SeedDataItem[]>(mockSeedData); // Store the original data
-  const [displayedData, setDisplayedData] = useState<SeedDataItem[]>(mockSeedData); // Data currently shown in the table
+  const [originalSeedData, setOriginalSeedData] = useState<SeedDataItem[]>([]);
+  const [displayedData, setDisplayedData] = useState<SeedDataItem[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
-  const [previewFileName, setPreviewFileName] = useState(''); // Restore
-  const [previewFileContent, setPreviewFileContent] = useState(''); // Restore
+  const [previewFileName, setPreviewFileName] = useState('');
+  const [previewFileContent, setPreviewFileContent] = useState('');
   const [isFilteringModalOpen, setIsFilteringModalOpen] = useState(false);
   const [currentFilteringConfig, setCurrentFilteringConfig] = useState<DataFilteringRequestFrontend | null>(null);
   const [filteringStrategy, setFilteringStrategy] = useState<string>('');
   const [isGenerationModalOpen, setIsGenerationModalOpen] = useState(false);
   const [isApplyingFilter, setIsApplyingFilter] = useState(false);
   const [isGeneratingData, setIsGeneratingData] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
 
-  // TODO: Implement actual file upload, preview, delete, validate logic
-
-  const handleShowPreview = (fileName: string) => { // Restore
-    setPreviewFileName(fileName);
-    // Simulate fetching content based on fileName
-    if (fileName === 'example_seed_data.jsonl') {
-        setPreviewFileContent(
-`[
-  {
-    "instruction": "解释量子计算中的叠加态概念",
-    "response": "在量子计算中，叠加态是指量子比特可以同时处于多个状态的能力。传统计算机的比特只能是0或1，而量子比特可以同时是0和1的线性组合，直到被测量时才会坍缩为特定状态。这种特性使量子计算机能够并行处理大量可能的解决方案，为特定类型的计算提供巨大的速度提升。"
-  },
-  {
-    "instruction": "如何实现简单的Web服务器？",
-    "response": "使用Python实现简单的Web服务器可以通过内置的http.server模块：\\n\\n\`\`\`python\\nimport http.server\\nimport socketserver\\n\\nPORT = 8000\\nHandler = http.server.SimpleHTTPRequestHandler\\n\\nwith socketserver.TCPServer(("", PORT), Handler) as httpd:\\n    print("服务器运行在端口:", PORT)\\n    httpd.serve_forever()\\n\`\`\`\\n\\n运行这段代码后，可以在浏览器中访问http://localhost:8000来查看当前目录中的文件。"
-  }
-]`
-        );
-    } else {
-        setPreviewFileContent(`无法预览文件: ${fileName} (此为模拟预览)`);
+  // Fetch seed data on component mount
+  const fetchSeedData = useCallback(async () => {
+    toast.info("正在加载种子数据...");
+    try {
+      const result = await apiListSeedData({});
+      if (result && result.data && Array.isArray(result.data.items)) {
+        setOriginalSeedData(result.data.items);
+        setDisplayedData(result.data.items);
+        toast.success(`成功加载 ${result.data.totalItems} 条种子数据。`);
+      } else {
+        toast.error("加载种子数据失败: 响应格式不正确。");
+        setOriginalSeedData([]);
+        setDisplayedData([]);
+      }
+    } catch (error: any) {
+      console.error("Error fetching seed data:", error);
+      toast.error(`加载种子数据失败: ${error.message}`);
+      setOriginalSeedData([]);
+      setDisplayedData([]);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchSeedData();
+  }, [fetchSeedData]);
+
+  const handleFileChange = (event: ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files.length > 0) {
+      setSelectedFile(event.target.files[0]);
+    } else {
+      setSelectedFile(null);
+    }
+  };
+
+  const handleUpload = async () => {
+    if (!selectedFile) {
+      toast.error("请选择一个文件进行上传。");
+      return;
+    }
+
+    setUploading(true);
+    toast.info(`正在上传文件: ${selectedFile.name}...`);
+
+    try {
+      // dataType can be selected by user in the future, for now, it's optional
+      const result = await apiUploadSeedData(selectedFile);
+      if (result && result.status === 'success') {
+        toast.success(`文件 "${selectedFile.name}" 上传成功！`);
+        setIsUploadModalOpen(false);
+        setSelectedFile(null);
+        fetchSeedData(); // Refresh the list
+      } else {
+        toast.error(`文件上传失败: ${result.message || '未知错误'}`);
+      }
+    } catch (error: any) {
+      console.error("Error uploading file:", error);
+      toast.error(`文件上传失败: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleShowPreview = (item: SeedDataItem) => {
+    setPreviewFileName(item.filename);
+    // For actual preview, you'd need an API to fetch file content by ID or path
+    // For now, we'll just show a placeholder or the savedPath
+    setPreviewFileContent(`文件内容预览 (ID: ${item.id}, 路径: ${item.savedPath})\n\n实际内容预览功能待实现。`);
     setIsPreviewModalOpen(true);
   };
 
-  const handleDeleteItem = (id: string) => {
-    setOriginalSeedData(prevData => prevData.filter(item => item.id !== id));
-    setDisplayedData(prevData => prevData.filter(item => item.id !== id));
-    // TODO: API call to delete on backend
+  const handleDeleteItem = async (id: string) => {
+    toast.info(`正在删除种子数据: ${id}...`);
+    try {
+      const result = await apiDeleteSeedData(id); // Call the new API
+      if (result && result.status === 'success') {
+        toast.success(`种子数据 ${id} 删除成功！`);
+        setOriginalSeedData(prevData => prevData.filter(item => item.id !== id));
+        setDisplayedData(prevData => prevData.filter(item => item.id !== id));
+      } else {
+        toast.error(`删除种子数据失败: ${result.message || '未知错误'}`);
+      }
+    } catch (error: any) {
+      console.error("Error deleting seed data:", error);
+      toast.error(`删除种子数据失败: ${error.message}`);
+    }
   };
   
-  // searchTerm will filter the displayedData
   const searchedData = displayedData.filter((item: SeedDataItem) =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
+    item.filename.toLowerCase().includes(searchTerm.toLowerCase())
   );
   
   const handleFilteringConfigChange = useCallback((config: DataFilteringRequestFrontend, strategy: string) => {
@@ -91,37 +150,43 @@ const DataManagementPage: React.FC = () => {
       toast.error("筛选配置未就绪。");
       return;
     }
-    // For now, let's assume we are filtering the first dataset in the list or a selected one.
-    // This needs to be more robust: allow user to select which data to filter.
-    // As a placeholder, if seedData is not empty, use it.
-    // The 'data' field in DataFilteringRequestFrontend is optional in FilteringConfigPanel,
-    // but required by the backend. We need to populate it here.
-    
-    // TODO: Implement logic to select or provide the actual data to be filtered.
-    // For this example, we'll use a placeholder or mock data if no specific data source is handled by FilteringConfigPanel.
-    // If FilteringConfigPanel handles data source selection (e.g. customDataPath), that logic should be used.
-    // For now, let's assume we're filtering the `mockSeedData` for demonstration if no other data is specified.
-    // This part needs to be properly integrated with how data is selected/uploaded.
     
     // Use originalSeedData as the source for filtering unless FilteringConfigPanel provides its own data
-    const dataToFilter = currentFilteringConfig.data || originalSeedData.map(item => {
-      // The backend expects a list of dictionaries. We need to ensure the fields match what the filter conditions will operate on.
-      // For now, let's pass a simplified version or the full item if backend handles it.
-      // This needs to align with how `FilteringConfigPanel` expects data fields to be named.
-      // For mock purposes, let's assume the backend can handle the SeedDataItem structure or relevant parts.
-      // A more robust solution would be to transform `SeedDataItem` to the exact format expected by the backend API.
-      const { id, status, statusType, uploadDate, ...filterableData } = item; // Exclude UI-specific fields
-      return filterableData;
-    });
+    // Ensure dataToFilter matches the backend's expected List[Dict[str, Any]]
+    const dataToFilter = currentFilteringConfig.data || originalSeedData.map(item => ({
+      // Map SeedDataItem to a generic object that backend can process
+      id: item.id, // Include ID if backend needs to reference original items
+      filename: item.filename,
+      file_size: item.fileSize, // Convert to snake_case for backend
+      record_count: item.recordCount, // Convert to snake_case for backend
+      data_type: item.dataType, // Convert to snake_case for backend
+      status: item.status,
+      upload_date: item.uploadDate, // Convert to snake_case for backend
+      updated_at: item.updatedAt, // Convert to snake_case for backend
+      // Add any other relevant fields that might be part of filtering
+    }));
     
     if (dataToFilter.length === 0) {
         toast.error("没有可供筛选的数据。请先上传或选择数据。");
         return;
     }
 
-    const requestPayload: DataFilteringRequestFrontend = {
-      ...currentFilteringConfig, // This includes filterConditions and combineOperation
+    // Convert filterConditions to snake_case for backend
+    const snakeCaseFilterConditions = currentFilteringConfig.filterConditions.map(condition => ({
+      field: condition.field,
+      operation: condition.operation as FilterOperation, // Cast to FilterOperation
+      value: condition.value,
+      case_sensitive: condition.caseSensitive, // Convert to snake_case
+    }));
+
+    const requestPayload: DataFilteringRequest = { // Use imported DataFilteringRequest type
       data: dataToFilter,
+      filterConditions: snakeCaseFilterConditions, // Use snake_case version
+      combineOperation: currentFilteringConfig.combineOperation,
+      limit: currentFilteringConfig.limit,
+      offset: currentFilteringConfig.offset,
+      orderBy: currentFilteringConfig.orderBy,
+      orderDirection: currentFilteringConfig.orderDirection,
     };
 
     console.log("Applying filter with payload:", requestPayload);
@@ -132,17 +197,18 @@ const DataManagementPage: React.FC = () => {
       const result = await apiFilterData(requestPayload);
       console.log("Filter result:", result);
       if (result && Array.isArray(result.filteredData)) {
-        const newDisplayedData: SeedDataItem[] = result.filteredData.map((filteredItem: any, index: number) => {
-          const originalItem = originalSeedData.find(og => og.name === filteredItem.name);
+        const newDisplayedData: SeedDataItem[] = result.filteredData.map((filteredItem: any) => {
+          // Convert filteredItem from snake_case back to camelCase for frontend display
           return {
-            id: originalItem?.id || `filtered-${index}`,
-            name: filteredItem.name || 'Unknown Name',
-            records: filteredItem.records || 0,
-            size: filteredItem.size || 'N/A',
-            status: originalItem?.status || '已筛选',
-            statusType: originalItem?.statusType || 'info',
-            uploadDate: originalItem?.uploadDate || new Date().toISOString().split('T')[0],
-            ...filteredItem,
+            id: filteredItem.id,
+            filename: filteredItem.filename,
+            savedPath: filteredItem.saved_path,
+            fileSize: filteredItem.file_size,
+            recordCount: filteredItem.record_count,
+            dataType: filteredItem.data_type,
+            status: filteredItem.status,
+            uploadDate: filteredItem.upload_date,
+            updatedAt: filteredItem.updated_at,
           };
         });
         setDisplayedData(newDisplayedData);
@@ -168,12 +234,19 @@ const DataManagementPage: React.FC = () => {
     let seedDataForRequest: any[] | undefined = undefined;
     if (config.strategy === "reasoning_distillation" || config.strategy === "seed_expansion") {
       if (config.seedDataSourceType === "default_upstream" && originalSeedData.length > 0) {
-        // Using a simplified version of originalSeedData. Adapt as needed.
-        seedDataForRequest = originalSeedData.map(item => ({ instruction: item.name, response: `Records: ${item.records}` })); // Example transformation
+        // Use relevant fields from SeedDataItem for generation, convert to snake_case
+        seedDataForRequest = originalSeedData.map(item => ({
+          id: item.id,
+          filename: item.filename,
+          saved_path: item.savedPath,
+          file_size: item.fileSize,
+          record_count: item.recordCount,
+          data_type: item.dataType,
+          status: item.status,
+          upload_date: item.uploadDate,
+          updated_at: item.updatedAt,
+        }));
       } else if (config.seedDataSourceType === "custom_seed" && config.customSeedDataPath) {
-        // TODO: Implement logic to load data from customSeedDataPath (if it's a path)
-        // or parse it (if it's direct content). This might involve an IPC call.
-        // For now, assuming customSeedDataPath might be direct JSON string content for simplicity.
         try {
           seedDataForRequest = JSON.parse(config.customSeedDataPath);
           if (!Array.isArray(seedDataForRequest)) throw new Error("Custom seed data is not an array.");
@@ -185,37 +258,38 @@ const DataManagementPage: React.FC = () => {
       }
     }
 
-    let backendGenerationMethod = "";
+    let backendGenerationMethod: GenerationMethod; // Explicitly type as GenerationMethod
     switch (config.strategy) {
       case "reasoning_distillation":
       case "topic_guided":
-        backendGenerationMethod = "llm_based";
+        backendGenerationMethod = GenerationMethod.LLM_BASED; // Use enum value
         break;
       case "seed_expansion":
-        backendGenerationMethod = "variation";
+        backendGenerationMethod = GenerationMethod.VARIATION; // Use enum value
         break;
       // Add other strategy mappings if necessary
       default:
-        backendGenerationMethod = config.strategy; // Fallback, might need adjustment
+        backendGenerationMethod = config.strategy as GenerationMethod; // Fallback, might need adjustment
     }
 
     const llmParams: Record<string, any> = {};
-    if (backendGenerationMethod === "llm_based") {
+    if (backendGenerationMethod === GenerationMethod.LLM_BASED) { // Use enum value
       llmParams.temperature = config.temperature;
-      llmParams.topP = config.topP;
-      llmParams.frequencyPenalty = config.frequencyPenalty;
-      // llmParams.presencePenalty = config.presencePenalty; // Add if configured in GenerationConfigPayload
-      // llmParams.stopSequences = config.stopSequences; // Add if configured
+      llmParams.top_p = config.topP; // Convert to snake_case
+      llmParams.frequency_penalty = config.frequencyPenalty; // Convert to snake_case
+      // llmParams.presence_penalty = config.presencePenalty; // Add if configured in GenerationConfigPayload
+      // llmParams.stop_sequences = config.stopSequences; // Add if configured
     }
 
-    const requestPayload = {
+    const requestPayload: DataGenerationRequest = { // Use imported DataGenerationRequest type
       seedData: seedDataForRequest,
-      template: backendGenerationMethod === "template" && config.strategy === "topic_guided" ? { topic: config.topicDescription } : undefined, // Adjust if template strategy is different
+      template: backendGenerationMethod === GenerationMethod.TEMPLATE && config.strategy === "topic_guided" ? { topic: config.topicDescription } : undefined, // Adjust if template strategy is different
       generationMethod: backendGenerationMethod,
       count: config.count,
       llmModel: config.model, // This is used by service if method is llm_based
-      llmPrompt: config.strategy === "topic_guided" ? config.topicDescription : (backendGenerationMethod === "llm_based" ? "Generate data based on seed." : undefined), // Provide a default prompt or ensure it's set
-      llmParams: Object.keys(llmParams).length > 0 ? llmParams : undefined,
+      llmPrompt: config.strategy === "topic_guided" ? config.topicDescription : (backendGenerationMethod === GenerationMethod.LLM_BASED ? "Generate data based on seed." : undefined), // Provide a default prompt or ensure it's set
+      // Merge llmParams directly into the payload if backend expects flat structure
+      ...(Object.keys(llmParams).length > 0 ? llmParams : {}), 
       // TODO: Add other fields from DataGenerationRequest schema if they are configurable in GenerationConfigPanel
       // fieldConstraints: config.fieldConstraints,
       // variationFactor: config.variationFactor,
@@ -230,17 +304,20 @@ const DataManagementPage: React.FC = () => {
       console.log("Generation result:", result);
       if (result && result.generatedData) {
         // TODO: Better integration of generated data.
-        // For now, prepend to displayedData with a mock structure.
-        const newGeneratedItems: SeedDataItem[] = result.generatedData.map((genItem: any, index: number) => ({
-          id: `gen-${Date.now()}-${index}`,
-          name: genItem.name || `Generated Data ${index + 1} (Strategy: ${config.strategy})`,
-          records: genItem.records || 1, // Assuming backend returns records or it's 1 per item
-          size: genItem.size || 'N/A',
-          status: '新生成',
-          statusType: 'info',
-          uploadDate: new Date().toISOString().split('T')[0],
-          // ... spread other relevant fields from genItem if they match SeedDataItem
-        }));
+        const newGeneratedItems: SeedDataItem[] = result.generatedData.map((genItem: any, index: number) => {
+          // Convert genItem from snake_case back to camelCase for frontend display
+          return {
+            id: genItem.id,
+            filename: genItem.filename,
+            savedPath: genItem.saved_path,
+            fileSize: genItem.file_size,
+            recordCount: genItem.record_count,
+            dataType: genItem.data_type,
+            status: genItem.status,
+            uploadDate: genItem.upload_date,
+            updatedAt: genItem.updated_at,
+          };
+        });
         setDisplayedData(prev => [...newGeneratedItems, ...prev]);
         toast.success(`数据生成成功！新增 ${result.count || newGeneratedItems.length} 条记录。`);
       } else {
@@ -255,36 +332,36 @@ const DataManagementPage: React.FC = () => {
     }
   };
 
-  const getStatusTagClass = (statusType: string) => { // Restore getStatusTagClass
-    switch (statusType) {
-      case 'success': return 'bg-success-html/10 text-green-700';
-      case 'warning': return 'bg-warning-html/10 text-yellow-700';
-      case 'info': return 'bg-info-html/10 text-blue-700';
+  const getStatusTagClass = (status: string) => {
+    // Map backend status to UI status types for styling
+    switch (status) {
+      case 'uploaded': return 'bg-blue-100 text-blue-800';
+      case 'validated': return 'bg-green-100 text-green-800';
+      case 'indexed': return 'bg-purple-100 text-purple-800';
+      case 'failed': return 'bg-red-100 text-red-800';
+      case 'processing': return 'bg-yellow-100 text-yellow-800';
+      case 'filtered': return 'bg-gray-100 text-gray-700'; // For filtered data display
+      case 'generated': return 'bg-sky-100 text-sky-800'; // For newly generated data
       default: return 'bg-gray-100 text-gray-700';
     }
   };
 
-  // Mock data for chart - Restore this logic
-  const chartData = {
-    labels: ['通用问答', '代码', '对话'],
-    values: [
-      displayedData.filter((d: SeedDataItem) => d.name.includes('seed_data') || d.name.includes('conversations')).reduce((sum: number, item: SeedDataItem) => sum + item.records, 0),
-      displayedData.filter((d: SeedDataItem) => d.name.includes('code_examples')).reduce((sum: number, item: SeedDataItem) => sum + item.records, 0),
-      displayedData.filter((d: SeedDataItem) => d.name.includes('new_dataset')).reduce((sum: number, item: SeedDataItem) => sum + item.records, 0) // Example, adjust as needed
-    ].filter((v: number) => v > 0) // Filter out zero values if any category is empty
-  };
-  // Adjust labels if some values are filtered out
-  const activeLabels = chartData.labels.filter((_, index: number) => chartData.values[index] > 0);
-
-
   // Calculate total records and size for statistics - based on displayedData
-  const totalRecords = displayedData.reduce((sum: number, item: SeedDataItem) => sum + item.records, 0);
-  // Assuming size is like "2.5 MB", "1.8 MB". This is a simplified sum.
-  const totalSizeMB = displayedData.reduce((sum: number, item: SeedDataItem) => {
-    const sizeMatch = item.size.match(/(\d+(\.\d+)?)\s*MB/);
-    return sum + (sizeMatch ? parseFloat(sizeMatch[1]) : 0);
-  }, 0);
-  const totalSizeDisplay = totalSizeMB > 0 ? `${totalSizeMB.toFixed(1)} MB` : "N/A";
+  const totalRecords = displayedData.reduce((sum: number, item: SeedDataItem) => sum + item.recordCount, 0);
+  const totalSizeMB = displayedData.reduce((sum: number, item: SeedDataItem) => sum + (item.fileSize / (1024 * 1024)), 0); // Convert bytes to MB
+  const totalSizeDisplay = totalSizeMB > 0 ? `${totalSizeMB.toFixed(2)} MB` : "N/A";
+
+  // Mock data for chart - adapt to actual data types
+  const chartData = {
+    labels: ['通用问答', '代码', '对话', '其他'], // Example categories
+    values: [
+      displayedData.filter((d: SeedDataItem) => d.dataType === 'general_qa').reduce((sum: number, item: SeedDataItem) => sum + item.recordCount, 0),
+      displayedData.filter((d: SeedDataItem) => d.dataType === 'coding_tasks').reduce((sum: number, item: SeedDataItem) => sum + item.recordCount, 0),
+      displayedData.filter((d: SeedDataItem) => d.dataType === 'conversations').reduce((sum: number, item: SeedDataItem) => sum + item.recordCount, 0),
+      displayedData.filter((d: SeedDataItem) => !d.dataType || (d.dataType !== 'general_qa' && d.dataType !== 'coding_tasks' && d.dataType !== 'conversations')).reduce((sum: number, item: SeedDataItem) => sum + item.recordCount, 0),
+    ].filter((v: number) => v > 0)
+  };
+  const activeLabels = chartData.labels.filter((_, index: number) => chartData.values[index] > 0);
 
   return (
     <div className="space-y-6">
@@ -355,17 +432,17 @@ const DataManagementPage: React.FC = () => {
                   key={item.id}
                   className="grid grid-cols-[minmax(200px,3fr)_repeat(5,minmax(80px,1fr))] gap-4 px-6 py-4 items-center border-b border-gray-100 last:border-b-0 hover:bg-primary-dark/5 transition-colors duration-150 text-sm"
                 >
-                  <div className="text-text-primary-html font-medium truncate" title={item.name}>{item.name}</div>
-                  <div className="hidden sm:block text-center text-text-secondary-html">{item.records.toLocaleString()}</div>
-                  <div className="hidden sm:block text-center text-text-secondary-html">{item.size}</div>
+                  <div className="text-text-primary-html font-medium truncate" title={item.filename}>{item.filename}</div>
+                  <div className="hidden sm:block text-center text-text-secondary-html">{item.recordCount.toLocaleString()}</div>
+                  <div className="hidden sm:block text-center text-text-secondary-html">{(item.fileSize / (1024 * 1024)).toFixed(2)} MB</div>
                   <div className="text-center">
-                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusTagClass(item.statusType)}`}>
+                    <span className={`px-2 py-0.5 text-xs font-semibold rounded-full ${getStatusTagClass(item.status)}`}>
                       {item.status}
                     </span>
                   </div>
-                  <div className="hidden md:block text-center text-text-secondary-html">{item.uploadDate}</div>
+                  <div className="hidden md:block text-center text-text-secondary-html">{new Date(item.uploadDate).toLocaleDateString()}</div>
                   <div className="flex justify-end space-x-1">
-                    <Button variant="ghost" size="xs" title="预览" onClick={() => handleShowPreview(item.name)}>
+                    <Button variant="ghost" size="xs" title="预览" onClick={() => handleShowPreview(item)}>
                       <Eye className="h-4 w-4 text-text-secondary-html hover:text-primary-dark" />
                     </Button>
                     <Button variant="ghost" size="xs" title="校验" onClick={() => alert('Validate action to be implemented')}>
@@ -383,7 +460,6 @@ const DataManagementPage: React.FC = () => {
             </div>
           </div>
         </div>
-
         {/* Pagination (Simplified) */}
         <div className="px-6 py-4 border-t border-black/5 flex justify-between items-center text-xs text-text-secondary-html">
           <div>显示 {searchedData.length > 0 ? 1 : 0}-{searchedData.length} 条，共 {searchedData.length} 条 (当前显示) / {originalSeedData.length} (原始)</div>
@@ -428,10 +504,13 @@ const DataManagementPage: React.FC = () => {
         <DialogContent>
           <DialogHeader><DialogTitle>上传数据文件</DialogTitle></DialogHeader>
           <p className="py-4">上传功能待实现。请选择要上传的种子数据文件（例如 .jsonl, .csv）。</p>
-          <Input type="file" className="my-2" onChange={(e: ChangeEvent<HTMLInputElement>) => console.log(e.target.files)} />
+          <Input type="file" className="my-2" onChange={handleFileChange} />
           <DialogFooter>
-            <DialogClose asChild><Button variant="outline">取消</Button></DialogClose>
-            <Button onClick={() => { alert('上传逻辑待实现'); setIsUploadModalOpen(false); }}>开始上传</Button>
+            <DialogClose asChild><Button variant="outline" disabled={uploading}>取消</Button></DialogClose>
+            <Button onClick={handleUpload} disabled={!selectedFile || uploading}>
+              {uploading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              开始上传
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -442,46 +521,42 @@ const DataManagementPage: React.FC = () => {
           <DialogHeader>
             <DialogTitle>高级数据筛选配置</DialogTitle>
           </DialogHeader>
-          <div className="flex-grow overflow-y-auto p-1 pr-3"> {/* Added pr-3 for scrollbar space */}
+          <div className="flex-grow overflow-y-auto p-1 pr-3">
             <FilteringConfigPanel onConfigChange={handleFilteringConfigChange} />
           </div>
           <DialogFooter className="mt-auto pt-4">
             <DialogClose asChild>
-              <Button type="button" variant="outline">取消</Button>
-            <Button type="button" variant="outline" disabled={isApplyingFilter}>取消</Button>
-          </DialogClose>
-          <Button type="button" onClick={handleApplyFilter} disabled={isApplyingFilter}>
-            {isApplyingFilter && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-            应用筛选
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+              <Button type="button" variant="outline" disabled={isApplyingFilter}>取消</Button>
+            </DialogClose>
+            <Button type="button" onClick={handleApplyFilter} disabled={isApplyingFilter}>
+              {isApplyingFilter && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              应用筛选
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-    {/* Generation Config Modal */}
-    {/* GenerationConfigPanel has its own "Start Generation" button, so no explicit footer here unless needed */}
-    <Dialog open={isGenerationModalOpen} onOpenChange={setIsGenerationModalOpen}>
-      <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>数据生成配置</DialogTitle>
-        </DialogHeader>
-        <div className="flex-grow overflow-y-auto p-1 pr-3">
-          <GenerationConfigPanel onStartGeneration={handleStartGeneration} />
-        </div>
-         <DialogFooter className="mt-auto pt-4">
-          <DialogClose asChild>
-            <Button type="button" variant="outline" disabled={isGeneratingData}>取消</Button>
-          </DialogClose>
-          {/* The "Start Generation" button is inside GenerationConfigPanel,
-              so this footer might only need a close button, or be removed if panel handles close.
-              For consistency, let's assume the panel's button is primary and this is just for closing.
-          */}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <p className="text-center text-sm text-gray-500 mt-4">预览、筛选和生成弹窗已启用。</p>
-    </div> // Closing the root div from line 271
+      {/* Generation Config Modal */}
+      <Dialog open={isGenerationModalOpen} onOpenChange={setIsGenerationModalOpen}>
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>数据生成配置</DialogTitle>
+          </DialogHeader>
+          <div className="flex-grow overflow-y-auto p-1 pr-3">
+            <GenerationConfigPanel onStartGeneration={handleStartGeneration} />
+          </div>
+          <DialogFooter className="mt-auto pt-4">
+            <DialogClose asChild>
+              <Button type="button" variant="outline" disabled={isGeneratingData}>取消</Button>
+            </DialogClose>
+            <Button type="button" onClick={() => { /* Handled by GenerationConfigPanel's internal button */ }} disabled={isGeneratingData}>
+              {isGeneratingData && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              开始生成 (由面板控制)
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 };
 

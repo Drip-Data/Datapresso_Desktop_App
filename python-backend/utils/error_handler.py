@@ -1,123 +1,154 @@
-from fastapi import Request
+"""
+全局错误处理模块
+"""
+
+from fastapi import Request, HTTPException, status
 from fastapi.responses import JSONResponse
 import logging
 import traceback
-from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
-# 错误码定义
-class ErrorCode:
-    VALIDATION_ERROR = "VALIDATION_ERROR"
-    PROCESSING_ERROR = "PROCESSING_ERROR"
-    NOT_FOUND = "NOT_FOUND"
-    PERMISSION_ERROR = "PERMISSION_ERROR"
-    EXTERNAL_SERVICE_ERROR = "EXTERNAL_SERVICE_ERROR"
-    INTERNAL_SERVER_ERROR = "INTERNAL_SERVER_ERROR"
-    INVALID_INPUT = "INVALID_INPUT"
-    CONFIGURATION_ERROR = "CONFIGURATION_ERROR"
-    RESOURCE_EXHAUSTED = "RESOURCE_EXHAUSTED"
 
-def handle_exception(request: Request, exc: Exception) -> JSONResponse:
-    """
-    全局异常处理函数
+class DatapressoException(Exception):
+    """Datapresso自定义异常基类"""
     
-    Args:
-        request: FastAPI请求对象
-        exc: 捕获的异常
-        
-    Returns:
-        JSONResponse: 包含错误详情的JSON响应
-    """
-    # 提取请求信息
-    path = request.url.path
-    method = request.method
+    def __init__(self, message: str, error_code: str = None, details: Dict[str, Any] = None):
+        self.message = message
+        self.error_code = error_code or "DATAPRESSO_ERROR"
+        self.details = details or {}
+        super().__init__(self.message)
+
+
+class ValidationError(DatapressoException):
+    """数据验证错误"""
     
-    # 生成请求ID(如果请求中没有)
-    request_id = getattr(request.state, "request_id", f"err-{datetime.now().strftime('%Y%m%d%H%M%S')}")
+    def __init__(self, message: str, field: str = None, details: Dict[str, Any] = None):
+        super().__init__(message, "VALIDATION_ERROR", details)
+        self.field = field
+
+
+class ProcessingError(DatapressoException):
+    """数据处理错误"""
     
-    # 准备基本错误详情
-    error_detail = str(exc)
-    error_trace = traceback.format_exc()
-    status_code = 500
-    error_code = ErrorCode.INTERNAL_SERVER_ERROR
+    def __init__(self, message: str, operation: str = None, details: Dict[str, Any] = None):
+        super().__init__(message, "PROCESSING_ERROR", details)
+        self.operation = operation
+
+
+class LLMAPIError(DatapressoException):
+    """LLM API调用错误"""
     
-    # 根据异常类型确定状态码和错误码
-    if hasattr(exc, "status_code"):
-        status_code = exc.status_code
+    def __init__(self, message: str, provider: str = None, details: Dict[str, Any] = None):
+        super().__init__(message, "LLM_API_ERROR", details)
+        self.provider = provider
+
+
+class TaskError(DatapressoException):
+    """任务执行错误"""
     
-    # 处理不同类型的错误
-    if "ValidationError" in exc.__class__.__name__:
-        error_code = ErrorCode.VALIDATION_ERROR
-        status_code = 400
-        logger.warning(f"Validation error in {path}: {error_detail}")
-    elif "NotFound" in exc.__class__.__name__:
-        error_code = ErrorCode.NOT_FOUND
-        status_code = 404
-        logger.warning(f"Resource not found in {path}: {error_detail}")
-    elif "Permission" in exc.__class__.__name__:
-        error_code = ErrorCode.PERMISSION_ERROR
-        status_code = 403
-        logger.warning(f"Permission error in {path}: {error_detail}")
-    elif "ValueError" == exc.__class__.__name__:
-        error_code = ErrorCode.INVALID_INPUT
-        status_code = 400
-        logger.warning(f"Invalid input in {path}: {error_detail}")
-    else:
-        # 未分类的错误作为内部服务器错误处理
-        logger.error(f"Unhandled exception in {method} {path}: {error_detail}")
-        logger.debug(f"Error trace: {error_trace}")
+    def __init__(self, message: str, task_id: str = None, details: Dict[str, Any] = None):
+        super().__init__(message, "TASK_ERROR", details)
+        self.task_id = task_id
+
+
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """全局异常处理器"""
     
-    # 构建错误响应
-    error_response = {
-        "status": "error",
-        "message": error_detail,
-        "error_code": error_code,
-        "request_id": request_id,
-        "timestamp": datetime.now().isoformat(),
-        "path": path
-    }
+    # 记录详细错误信息
+    logger.error(f"Unhandled exception on {request.method} {request.url}: {exc}")
+    logger.error(f"Traceback: {traceback.format_exc()}")
     
-    # 在开发环境中添加更多调试信息
-    if logger.level <= logging.DEBUG:
-        error_response["debug_info"] = {
-            "error_type": exc.__class__.__name__,
-            "error_location": _extract_error_location(error_trace)
-        }
+    # 处理自定义异常
+    if isinstance(exc, DatapressoException):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "message": exc.message,
+                "error_code": exc.error_code,
+                "details": exc.details
+            }
+        )
     
+    # 处理HTTP异常
+    if isinstance(exc, HTTPException):
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "status": "error",
+                "message": exc.detail,
+                "error_code": "HTTP_ERROR"
+            }
+        )
+    
+    # 处理其他异常
     return JSONResponse(
-        status_code=status_code,
-        content=error_response
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={
+            "status": "error",
+            "message": "Internal server error",
+            "error_code": "INTERNAL_ERROR"
+        }
     )
 
-def _extract_error_location(trace: str) -> Optional[Dict[str, Any]]:
-    """从错误堆栈中提取错误位置信息"""
+
+def handle_service_error(func):
+    """服务层错误处理装饰器"""
+    
+    async def wrapper(*args, **kwargs):
+        try:
+            return await func(*args, **kwargs)
+        except DatapressoException:
+            # 重新抛出自定义异常
+            raise
+        except Exception as e:
+            logger.error(f"Service error in {func.__name__}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            raise ProcessingError(
+                f"Service operation failed: {str(e)}",
+                operation=func.__name__
+            )
+    
+    return wrapper
+
+
+def validate_required_fields(data: Dict[str, Any], required_fields: list) -> None:
+    """验证必填字段"""
+    missing_fields = []
+    
+    for field in required_fields:
+        if field not in data or data[field] is None:
+            missing_fields.append(field)
+    
+    if missing_fields:
+        raise ValidationError(
+            f"Missing required fields: {', '.join(missing_fields)}",
+            details={"missing_fields": missing_fields}
+        )
+
+
+def validate_file_type(filename: str, allowed_extensions: list) -> None:
+    """验证文件类型"""
+    if not any(filename.lower().endswith(ext) for ext in allowed_extensions):
+        raise ValidationError(
+            f"File type not allowed. Supported types: {', '.join(allowed_extensions)}",
+            field="file",
+            details={"filename": filename, "allowed_extensions": allowed_extensions}
+        )
+
+
+def validate_positive_integer(value: Any, field_name: str) -> int:
+    """验证正整数"""
     try:
-        # 分析堆栈跟踪以查找最相关的错误位置
-        lines = trace.strip().split('\n')
-        
-        # 寻找第一个应用代码相关的行
-        for line in lines:
-            if "File" in line and "site-packages" not in line:
-                # 文件位置通常在第一个引号对之间
-                file_start = line.find('"') + 1
-                file_end = line.find('"', file_start)
-                
-                # 行号通常在"line"之后
-                line_num_start = line.find("line") + 5
-                line_num_end = line.find(",", line_num_start)
-                
-                # 返回位置信息
-                return {
-                    "file": line[file_start:file_end] if file_start > 0 else "unknown",
-                    "line": int(line[line_num_start:line_num_end]) if line_num_start > 5 else 0
-                }
-        
-        # 如果没有找到应用代码，返回最后一个错误位置
-        if len(lines) >= 2:
-            return {"trace": lines[-2:]}
-        
-        return None
-    except Exception:
-        return None
+        int_value = int(value)
+        if int_value <= 0:
+            raise ValueError()
+        return int_value
+    except (ValueError, TypeError):
+        raise ValidationError(
+            f"{field_name} must be a positive integer",
+            field=field_name,
+            details={"value": value}
+        )

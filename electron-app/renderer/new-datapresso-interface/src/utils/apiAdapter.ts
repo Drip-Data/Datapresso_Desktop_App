@@ -50,6 +50,9 @@ interface ElectronAPI {
   listLlmTasks: (params?: any) => Promise<any>;
   getLlmModels: (params?: any) => Promise<any>;
   fetchLLMProviders: () => Promise<any>;
+  testLlmProviderConnection: (providerName: string) => Promise<any>; // Added
+  uploadSeedData: (fileBuffer: number[], fileName: string, dataType?: string) => Promise<any>; // Added
+  listSeedData: (params?: { page?: number; pageSize?: number; statusFilter?: string }) => Promise<any>; // Added
 
   evaluateData: (params: any) => Promise<any>;
   asyncEvaluateData: (params: any) => Promise<any>;
@@ -94,57 +97,161 @@ declare global {
 const isElectron = window.electronAPI !== undefined;
 
 // 辅助函数处理API调用和转换
-async function callApi(electronFuncKey: keyof ElectronAPI, httpFunc: Function, params?: any): Promise<any> {
+async function callApi(electronFuncKey: keyof ElectronAPI, httpFunc: Function | null, params?: any): Promise<any> {
+  console.log(`callApi: Invoking ${String(electronFuncKey)} with params:`, params); // Added general log
   const snakeParams = keysToSnake(params);
   let response;
 
   if (isElectron && window.electronAPI) {
     const electronFunc = window.electronAPI[electronFuncKey];
-    if (typeof electronFunc !== 'function') {
-      console.error(`Electron API function ${electronFuncKey} is not defined.`);
-      throw new Error(`Electron API function ${electronFuncKey} is not defined.`);
+    // All Electron API functions should be explicitly handled or throw an error if not found.
+    // No generic 'else' branch for electronFunc calls.
+    if (electronFuncKey === 'minimizeWindow') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['minimizeWindow'])();
+    } else if (electronFuncKey === 'maximizeWindow') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['maximizeWindow'])();
+    } else if (electronFuncKey === 'closeWindow') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['closeWindow'])();
+    } else if (electronFuncKey === 'toggleMaximizeWindow') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['toggleMaximizeWindow'])();
+    } else if (electronFuncKey === 'isWindowMaximized') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['isWindowMaximized'])();
+    } else if (electronFuncKey === 'invokeLlm') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['invokeLlm'])(snakeParams);
+    } else if (electronFuncKey === 'invokeLlmWithImages') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['invokeLlmWithImages'])(snakeParams);
+    } else if (electronFuncKey === 'getLlmEmbeddings') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getLlmEmbeddings'])(snakeParams);
+    } else if (electronFuncKey === 'createLlmBatchTask') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['createLlmBatchTask'])(snakeParams);
+    } else if (electronFuncKey === 'getLlmTaskStatus') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getLlmTaskStatus'])(params); // taskId is string
+    } else if (electronFuncKey === 'listLlmTasks') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['listLlmTasks'])(snakeParams);
+    } else if (electronFuncKey === 'getLlmModels') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getLlmModels'])(snakeParams);
+    } else if (electronFuncKey === 'fetchLLMProviders') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['fetchLLMProviders'])();
+    } else if (electronFuncKey === 'testLlmProviderConnection') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['testLlmProviderConnection'])(params); // providerName is string
+    } else if (electronFuncKey === 'uploadSeedData') {
+      const file = params.file;
+      const dataType = params.dataType;
+      const fileBuffer = await file.arrayBuffer();
+      if (electronFunc) response = await (electronFunc as ElectronAPI['uploadSeedData'])(Array.from(new Uint8Array(fileBuffer)), file.name, dataType);
+    } else if (electronFuncKey === 'listSeedData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['listSeedData'])(snakeParams);
+    } else if (electronFuncKey === 'evaluateData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['evaluateData'])(snakeParams);
+    } else if (electronFuncKey === 'asyncEvaluateData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['asyncEvaluateData'])(snakeParams);
+    } else if (electronFuncKey === 'getEvaluationTaskResult') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getEvaluationTaskResult'])(params); // taskId is string
+    } else if (electronFuncKey === 'filterData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['filterData'])(snakeParams);
+    } else if (electronFuncKey === 'asyncFilterData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['asyncFilterData'])(snakeParams);
+    } else if (electronFuncKey === 'getFilteringTaskResult') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getFilteringTaskResult'])(params); // taskId is string
+    } else if (electronFuncKey === 'generateData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['generateData'])(snakeParams);
+    } else if (electronFuncKey === 'asyncGenerateData') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['asyncGenerateData'])(snakeParams);
+    } else if (electronFuncKey === 'getGenerationTaskResult') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getGenerationTaskResult'])(params); // taskId is string
+    } else if (electronFuncKey === 'assessQuality') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['assessQuality'])(snakeParams);
+    } else if (electronFuncKey === 'asyncAssessQuality') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['asyncAssessQuality'])(snakeParams);
+    } else if (electronFuncKey === 'getAssessmentTaskResult') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getAssessmentTaskResult'])(params); // taskId is string
+    } else if (electronFuncKey === 'llamafactoryRun') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryRun'])(snakeParams);
+    } else if (electronFuncKey === 'llamafactoryCreateConfig') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryCreateConfig'])(snakeParams);
+    } else if (electronFuncKey === 'llamafactoryStartTask') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryStartTask'])(snakeParams);
+    } else if (electronFuncKey === 'llamafactoryStopTask') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryStopTask'])(params);
+    } else if (electronFuncKey === 'llamafactoryGetTaskStatus') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryGetTaskStatus'])(params);
+    } else if (electronFuncKey === 'llamafactoryGetTaskLogs') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryGetTaskLogs'])(params);
+    } else if (electronFuncKey === 'llamafactoryListTasks') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['listLlmTasks'])(snakeParams);
+    } else if (electronFuncKey === 'llamafactoryModelTemplates') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryModelTemplates'])();
+    } else if (electronFuncKey === 'llamafactoryAvailableDatasets') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['llamafactoryAvailableDatasets'])();
+    } else if (electronFuncKey === 'getLlamaFactoryExampleConfig') {
+      if (electronFunc && typeof electronFunc === 'function') response = await (electronFunc as NonNullable<ElectronAPI['getLlamaFactoryExampleConfig']>)(params);
+    } else if (electronFuncKey === 'openFile') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['openFile'])(params);
+    } else if (electronFuncKey === 'saveFile') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['saveFile'])(params.content, params.defaultPath);
+    } else if (electronFuncKey === 'diagnoseWindowControls') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['diagnoseWindowControls'])();
+    } else if (electronFuncKey === 'setApiExecutionMode') {
+      if (electronFunc && typeof electronFunc === 'function') response = await (electronFunc as NonNullable<ElectronAPI['setApiExecutionMode']>)(params as ExecutionMode);
+    } else {
+      // If we reach here, it means an ElectronAPI function was called that is not explicitly handled.
+      // This indicates a missing case in the callApi function or an incorrect ElectronAPI interface definition.
+      throw new Error(`Electron API function ${electronFuncKey} is not explicitly handled in callApi.`);
     }
-    
-    if (electronFuncKey === 'setApiExecutionMode') {
-      // Special handling for setApiExecutionMode, params is the mode itself
-      response = await electronFunc(params as ExecutionMode);
-  } else if (electronFuncKey === 'getFilteringTaskResult' && typeof params === 'string') {
-    response = await window.electronAPI.getFilteringTaskResult(params);
-  } else if (electronFuncKey === 'getGenerationTaskResult' && typeof params === 'string') {
-    response = await window.electronAPI.getGenerationTaskResult(params);
-  } else if (electronFuncKey === 'getEvaluationTaskResult' && typeof params === 'string') {
-    response = await window.electronAPI.getEvaluationTaskResult(params);
-  } else if (electronFuncKey === 'getAssessmentTaskResult' && typeof params === 'string') {
-    response = await window.electronAPI.getAssessmentTaskResult(params);
-  } else if (electronFuncKey === 'getLlmTaskStatus' && typeof params === 'string') {
-    response = await window.electronAPI.getLlmTaskStatus(params);
   } else {
-    response = await electronFunc(snakeParams);
-  }
-} else {
-  // HTTP Fallback
-  if (typeof httpFunc !== 'function') {
-    console.error(`HTTP function for ${electronFuncKey} is not defined or implemented.`);
-    throw new Error(`HTTP function for ${electronFuncKey} not available.`);
-  }
+    // HTTP Fallback
+    if (httpFunc === null) { // Check if httpFunc is explicitly null
+      console.error(`HTTP function for ${electronFuncKey} is not defined or implemented, and no fallback provided.`);
+      throw new Error(`HTTP function for ${electronFuncKey} not available.`);
+    }
+    if (typeof httpFunc !== 'function') { // Fallback for cases where it's not null but not a function
+      console.error(`HTTP function for ${electronFuncKey} is not a callable function.`);
+      throw new Error(`HTTP function for ${electronFuncKey} not available.`);
+    }
 
-  if (electronFuncKey === 'setApiExecutionMode') {
-    response = await httpFunc(params as ExecutionMode);
-  } else if (typeof params === 'string' &&
-      (electronFuncKey === 'getFilteringTaskResult' ||
-       electronFuncKey === 'getGenerationTaskResult' ||
-       electronFuncKey === 'getEvaluationTaskResult' ||
-       electronFuncKey === 'getAssessmentTaskResult' ||
-       electronFuncKey === 'getLlmTaskStatus')) {
-    // For HTTP GET requests with path parameters like taskId, httpFunc is already specific
-    response = await httpFunc(params);
-  } else {
-    response = await httpFunc(snakeParams);
+    if (electronFuncKey === 'setApiExecutionMode') {
+      response = await httpFunc(params as ExecutionMode);
+    } else if (electronFuncKey === 'uploadSeedData') {
+      const formData = new FormData();
+      formData.append('file', params.file);
+      if (params.dataType) {
+        formData.append('data_type', params.dataType);
+      }
+      response = await fetch(`${API_BASE_URL}/seed_data/upload`, {
+        method: 'POST',
+        body: formData,
+      }).then(res => {
+        if (!res.ok) throw new Error(res.statusText);
+        return res.json();
+      });
+    } else if (electronFuncKey === 'listSeedData') {
+      const queryParams = new URLSearchParams(snakeParams).toString();
+      response = await fetch(`${API_BASE_URL}/seed_data?${queryParams}`).then(res => {
+        if (!res.ok) throw new Error(res.statusText);
+        return res.json();
+      });
+    } else if (electronFuncKey === 'testLlmProviderConnection') {
+      response = await fetch(`${API_BASE_URL}/llm_api/providers/${params}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).then(res => {
+        if (!res.ok) throw new Error(res.statusText);
+        return res.json();
+      });
+    } else if (typeof params === 'string' &&
+        (electronFuncKey === 'getFilteringTaskResult' ||
+         electronFuncKey === 'getGenerationTaskResult' ||
+         electronFuncKey === 'getEvaluationTaskResult' ||
+         electronFuncKey === 'getAssessmentTaskResult' ||
+         electronFuncKey === 'getLlmTaskStatus')) {
+      // For HTTP GET requests with path parameters like taskId, httpFunc is already specific
+      response = await httpFunc(params);
+    } else {
+      response = await httpFunc(snakeParams);
+    }
   }
-  // IMPORTANT: The return keysToCamel(response) was inside the 'else' (HTTP Fallback) block.
-  // It should be outside, after the main if/else, to apply to both Electron and HTTP responses.
-}
-return keysToCamel(response); // Moved to apply to all responses
+  return keysToCamel(response); // Moved to apply to all responses
 }
 
 // 适配后的API调用
@@ -310,31 +417,85 @@ const API_BASE_URL = (import.meta as ImportMeta).env.VITE_API_BASE_URL || 'http:
 
 export const fetchLLMProviders = async (): Promise<any> => {
   let rawResponse;
-  if (isElectron && window.electronAPI) {
-    if (typeof window.electronAPI.fetchLLMProviders !== 'function') {
-      console.error('electronAPI.fetchLLMProviders is not defined.');
-      throw new Error('electronAPI.fetchLLMProviders is not defined.');
+  if (isElectron && window.electronAPI && typeof window.electronAPI.fetchLLMProviders === 'function') {
+    console.log("apiAdapter: Attempting to fetch LLM providers via Electron IPC.");
+    try {
+      rawResponse = await window.electronAPI.fetchLLMProviders();
+      console.log("apiAdapter: Received Electron IPC response for fetchLLMProviders:", rawResponse);
+    } catch (error) {
+      console.error("apiAdapter: IPC call failed, falling back to HTTP:", error);
+      // Fall through to HTTP fallback
     }
-    rawResponse = await window.electronAPI.fetchLLMProviders();
-  } else {
-    const response = await fetch(`${API_BASE_URL}/llm_api/providers`);
-    if (!response.ok) {
-      let errorDetail = response.statusText;
-      try {
-        const errorData = await response.json();
-        errorDetail = errorData.detail || errorDetail;
-      } catch (e) { /* ignore */ }
-      throw new Error(`Failed to fetch LLM providers: ${response.status} ${errorDetail}`);
+  }
+  
+  if (!rawResponse) {
+    console.log("apiAdapter: Attempting to fetch LLM providers via HTTP fallback.");
+    console.log("apiAdapter: Using API_BASE_URL:", API_BASE_URL);
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/llm_api/providers`);
+      console.log("apiAdapter: HTTP response status:", response.status);
+      
+      if (!response.ok) {
+        let errorDetail = response.statusText;
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.detail || errorDetail;
+        } catch (e) { /* ignore */ }
+        console.error(`apiAdapter: HTTP fetch failed: ${response.status} ${errorDetail}`);
+        throw new Error(`Failed to fetch LLM providers: ${response.status} ${errorDetail}`);
+      }
+      rawResponse = await response.json();
+      console.log("apiAdapter: Received HTTP response for fetchLLMProviders:", rawResponse);
+    } catch (error) {
+      console.error("apiAdapter: Network error during HTTP fetch:", error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Network error fetching LLM providers: ${errorMessage}`);
     }
-    rawResponse = await response.json();
   }
 
   if (rawResponse && rawResponse.providers) {
+    console.log("apiAdapter: Returning camelCased providers from 'providers' key.");
     return keysToCamel(rawResponse.providers);
   } else if (rawResponse && rawResponse.status === 'success' && rawResponse.hasOwnProperty('providers')) {
+     console.log("apiAdapter: Returning camelCased providers from 'providers' key (success status).");
      return keysToCamel(rawResponse.providers);
   }
+  console.log("apiAdapter: Returning raw camelCased response.");
   return keysToCamel(rawResponse);
+};
+
+export const testLlmProviderConnection = async (providerName: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    if (typeof window.electronAPI.testLlmProviderConnection !== 'function') {
+      console.error('electronAPI.testLlmProviderConnection is not defined.');
+      throw new Error('electronAPI.testLlmProviderConnection is not defined.');
+    }
+    const rawResponse = await window.electronAPI.testLlmProviderConnection(providerName);
+    return keysToCamel(rawResponse);
+  } else {
+    // HTTP fallback
+    try {
+      const response = await fetch(`${API_BASE_URL}/llm_api/providers/${providerName}/test`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // Empty body as per backend definition for now
+      });
+      if (!response.ok) {
+        let errorDetail = response.statusText;
+        try {
+          const errorData = await response.json();
+          errorDetail = errorData.detail || errorDetail;
+        } catch (e) { /* ignore */ }
+        throw new Error(`HTTP error! status: ${response.status} - ${errorDetail}`);
+      }
+      const rawResponse = await response.json();
+      return keysToCamel(rawResponse);
+    } catch (error) {
+      console.error('Error in httpTestLlmProviderConnection:', error);
+      throw error;
+    }
+  }
 };
 
 // 添加Electron特有功能的API
@@ -361,5 +522,510 @@ export const saveFile = async (content: string, defaultPath?: string): Promise<a
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     return { saved: true, path: a.download };
+  }
+};
+
+export const uploadSeedData = async (file: File, dataType?: string): Promise<any> => {
+  // The callApi function will handle the Electron vs HTTP logic.
+  // We need to pass the file object and dataType as a single 'params' object to callApi.
+  return callApi('uploadSeedData', null, { file, dataType }); // httpFunc is null as it's handled inside callApi
+};
+
+export const listSeedData = async (params?: { page?: number; pageSize?: number; statusFilter?: string }): Promise<any> => {
+  // The callApi function will handle the Electron vs HTTP logic.
+  return callApi('listSeedData', null, params); // httpFunc is null as it's handled inside callApi
+};
+
+// ===== 系统与配置管理 API =====
+export const getAppConfig = async (): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getAppConfig not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/config`);
+    if (!response.ok) {
+      throw new Error(`Failed to get app config: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const updateAppConfig = async (configUpdates: any): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('updateAppConfig not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(keysToSnake(configUpdates)),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update app config: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const validateConfig = async (configContent: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('validateConfig not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/config/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config_content: configContent }),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to validate config: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 扩展的 LLM Provider 管理 API =====
+export const getLlmProviderConfig = async (providerName: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getLlmProviderConfig not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/providers/${providerName}/config`);
+    if (!response.ok) {
+      throw new Error(`Failed to get LLM provider config: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const updateLlmProviderConfig = async (providerName: string, configData: any): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('updateLlmProviderConfig not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/providers/${providerName}/config`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(keysToSnake(configData)),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to update LLM provider config: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 系统提示模板管理 API =====
+export const getSystemPromptTemplates = async (stageName: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getSystemPromptTemplates not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/stages/${stageName}/system-prompt-templates`);
+    if (!response.ok) {
+      throw new Error(`Failed to get system prompt templates: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getSystemPromptTemplate = async (stageName: string, templateId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getSystemPromptTemplate not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/stages/${stageName}/system-prompt-templates/${templateId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get system prompt template: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 输出模式模板管理 API =====
+export const getOutputSchemaTemplates = async (stageName: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getOutputSchemaTemplates not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/stages/${stageName}/output-schema-templates`);
+    if (!response.ok) {
+      throw new Error(`Failed to get output schema templates: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getOutputSchemaTemplate = async (stageName: string, templateId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getOutputSchemaTemplate not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/llm/stages/${stageName}/output-schema-templates/${templateId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get output schema template: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 种子数据扩展管理 API =====
+export const validateSeedData = async (fileId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('validateSeedData not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/seed_data/${fileId}/validate`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to start seed data validation: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const indexSeedData = async (fileId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('indexSeedData not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/seed_data/${fileId}/index`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to start seed data indexing: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const deleteSeedData = async (fileId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('deleteSeedData not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/seed_data/${fileId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to delete seed data: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 数据生成任务管理 API =====
+export const createGenerationTask = async (taskConfig: any): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('createGenerationTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/generation/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(keysToSnake(taskConfig)),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to create generation task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const listGenerationTasks = async (params?: { page?: number; pageSize?: number; statusFilter?: string }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('listGenerationTasks not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/generation/tasks?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to list generation tasks: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getGenerationTask = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getGenerationTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/generation/tasks/${taskId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get generation task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getGenerationTaskResults = async (taskId: string, params?: { format?: string; page?: number; pageSize?: number; download?: boolean }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getGenerationTaskResults not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/generation/tasks/${taskId}/results?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get generation task results: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const controlGenerationTask = async (taskId: string, action: 'pause' | 'resume' | 'cancel'): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('controlGenerationTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/generation/tasks/${taskId}/${action}`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to ${action} generation task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 质量评估任务管理 API =====
+export const createAssessmentTask = async (taskConfig: any): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('createAssessmentTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/assessment/tasks`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(keysToSnake(taskConfig)),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to create assessment task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const listAssessmentTasks = async (params?: { page?: number; pageSize?: number; statusFilter?: string }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('listAssessmentTasks not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/assessment/tasks?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to list assessment tasks: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getAssessmentTask = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getAssessmentTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/assessment/tasks/${taskId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get assessment task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getAssessmentReport = async (taskId: string, format: string = 'json'): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getAssessmentReport not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/assessment/tasks/${taskId}/report?format=${format}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get assessment report: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 数据筛选任务管理 API =====
+export const applyDataFiltering = async (taskConfig: any): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('applyDataFiltering not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/filtering/apply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(keysToSnake(taskConfig)),
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to apply data filtering: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const listFilteringTasks = async (params?: { page?: number; pageSize?: number; statusFilter?: string }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('listFilteringTasks not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/filtering/tasks?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to list filtering tasks: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getFilteringTask = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getFilteringTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/filtering/tasks/${taskId}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get filtering task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getFilteredData = async (taskId: string, params?: { format?: string; page?: number; pageSize?: number; download?: boolean }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getFilteredData not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/filtering/tasks/${taskId}/results?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get filtered data: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// ===== 通用任务管理 API =====
+export const getTaskStatus = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getTaskStatus not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/status`);
+    if (!response.ok) {
+      throw new Error(`Failed to get task status: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getTaskLogs = async (taskId: string, params?: { nLines?: number; since?: string }): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getTaskLogs not yet implemented in Electron API');
+  } else {
+    const queryParams = new URLSearchParams(keysToSnake(params || {})).toString();
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/logs?${queryParams}`);
+    if (!response.ok) {
+      throw new Error(`Failed to get task logs: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const retryTask = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('retryTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}/retry`, {
+      method: 'POST',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to retry task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const deleteTask = async (taskId: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('deleteTask not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/tasks/${taskId}`, {
+      method: 'DELETE',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to delete task: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+export const getSystemResourceUsage = async (): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    throw new Error('getSystemResourceUsage not yet implemented in Electron API');
+  } else {
+    const response = await fetch(`${API_BASE_URL}/system/resource-usage`);
+    if (!response.ok) {
+      throw new Error(`Failed to get system resource usage: ${response.status} ${response.statusText}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  }
+};
+
+// 模块联调测试函数
+export const testDataGenerationModule = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/data_generation/test`);
+    if (!response.ok) {
+      throw new Error(`Data generation module test failed: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Data generation module test error:', error);
+    throw error;
+  }
+};
+
+export const testQualityAssessmentModule = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/quality_assessment/test`);
+    if (!response.ok) {
+      throw new Error(`Quality assessment module test failed: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Quality assessment module test error:', error);
+    throw error;
+  }
+};
+
+export const testDataFilteringModule = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/data_filtering/test`);
+    if (!response.ok) {
+      throw new Error(`Data filtering module test failed: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Data filtering module test error:', error);
+    throw error;
+  }
+};
+
+export const testLlamaFactoryModule = async (): Promise<any> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/llamafactory/test`);
+    if (!response.ok) {
+      throw new Error(`LlamaFactory module test failed: ${response.status}`);
+    }
+    return response.json();
+  } catch (error) {
+    console.error('LlamaFactory module test error:', error);
+    throw error;
   }
 };

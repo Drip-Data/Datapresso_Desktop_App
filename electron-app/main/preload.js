@@ -21,6 +21,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // LLM Providers API
   fetchLLMProviders: () => ipcRenderer.invoke('api:llm_api/providers'),
+  testLlmProviderConnection: (providerName) => ipcRenderer.invoke('api:llm_api/providers/test_connection', providerName),
+
+  // Seed Data API
+  uploadSeedData: (fileBuffer, fileName, dataType) => ipcRenderer.invoke('api:seed_data/upload', { fileBuffer, fileName, dataType }),
+  listSeedData: (params) => ipcRenderer.invoke('api:seed_data/list', params),
 
   // Evaluation API
   evaluateData: (params) => ipcRenderer.invoke('api:evaluation/evaluate', params),

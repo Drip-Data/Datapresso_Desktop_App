@@ -77,6 +77,21 @@ function registerLlmApiHandlers() {
     { channel: 'providers', method: 'GET' },
     // Note: invoke_async was previously mapped to /batch. createLlmBatchTask in preload uses 'api:llm_api/batch'.
   ]);
+
+  // Add specific handler for test_connection
+  ipcMain.handle('api:llm_api/providers/test_connection', async (event, providerName) => {
+    try {
+      const url = `${API_BASE_URL}/llm_api/providers/${providerName}/test`;
+      console.log(`IPC: Handling api:llm_api/providers/test_connection for ${providerName} with POST to ${url}`);
+      const response = await axios.post(url, {}); // Send empty body as per backend
+      return response.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
+      console.error(`Error in IPC api:llm_api/providers/test_connection for ${providerName}:`, errorMessage, error.response?.data);
+      return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
+    }
+  });
+
   // Generic task handlers are separate
   createModuleHandlers('tasks', [
       { channel: 'get', method: 'GET', pathParams: ['taskId'] }, // Corresponds to /tasks/{taskId}
@@ -172,6 +187,49 @@ function registerLlamaFactoryHandlers() {
       return { status: 'error', message: errorMessage };
     }
   });
+  console.log(`IPC handlers for ${moduleName} registered.`);
+}
+
+function registerSeedDataHandlers() {
+  const moduleName = 'seed_data';
+  console.log(`Registering IPC handlers for ${moduleName}...`);
+
+  ipcMain.handle(`api:${moduleName}/upload`, async (event, { fileBuffer, fileName, dataType }) => {
+    try {
+      const formData = new FormData();
+      // Reconstruct file from buffer. FormData expects a Blob or Node.js Buffer.
+      // Using Buffer.from(fileBuffer) directly is for Node.js environment.
+      formData.append('file', Buffer.from(fileBuffer), fileName);
+      if (dataType) {
+        formData.append('data_type', dataType);
+      }
+
+      console.log(`IPC: Handling ${moduleName}/upload for file: ${fileName}`);
+      // axios automatically sets Content-Type for FormData when passing it directly
+      const response = await axios.post(`${API_BASE_URL}/${moduleName}/upload`, formData, {
+        headers: formData.getHeaders() // Important for FormData to set boundary
+      });
+      return response.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
+      console.error(`Error in IPC ${moduleName}/upload:`, errorMessage, error.response?.data);
+      return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
+    }
+  });
+
+  ipcMain.handle(`api:${moduleName}/list`, async (event, params) => {
+    try {
+      const queryParams = new URLSearchParams(params).toString();
+      console.log(`IPC: Handling ${moduleName}/list with params: ${queryParams}`);
+      const response = await axios.get(`${API_BASE_URL}/${moduleName}?${queryParams}`);
+      return response.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
+      console.error(`Error in IPC ${moduleName}/list:`, errorMessage, error.response?.data);
+      return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
+    }
+  });
+
   console.log(`IPC handlers for ${moduleName} registered.`);
 }
 
@@ -286,6 +344,7 @@ function registerIpcHandlers() {
   registerEvaluationHandlers();
   registerQualityAssessmentHandlers();
   registerLlamaFactoryHandlers();
+  registerSeedDataHandlers(); // Added call for seed data handlers
   registerWindowControlHandlers();
   registerUtilityHandlers(); // Added call for utility handlers
   console.log('All IPC handlers registration process initiated.');

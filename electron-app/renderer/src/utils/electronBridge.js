@@ -96,6 +96,16 @@ export const api = {
   },
   
   // LLM API
+  fetchLLMProviders: async () => { // Renamed from getLlmProviders to match preload
+    if (isElectron) {
+      return window.electronAPI.fetchLLMProviders();
+    } else {
+      // Web environment fallback
+      const response = await fetch('/api/llm_api/providers');
+      return response.json();
+    }
+  },
+
   invokeLlm: async (params) => {
     if (isElectron) {
       return window.electronAPI.invokeLlm(params);

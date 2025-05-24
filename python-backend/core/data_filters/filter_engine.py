@@ -105,8 +105,12 @@ def _create_filter_function(condition: FilterCondition) -> Callable:
             return item_value != compare_value
         elif operation == FilterOperation.GREATER_THAN:
             return item_value > compare_value if item_value is not None else False
+        elif operation == FilterOperation.GREATER_THAN_EQUALS: # Added
+            return item_value >= compare_value if item_value is not None else False # Added
         elif operation == FilterOperation.LESS_THAN:
             return item_value < compare_value if item_value is not None else False
+        elif operation == FilterOperation.LESS_THAN_EQUALS: # Added
+            return item_value <= compare_value if item_value is not None else False # Added
         elif operation == FilterOperation.CONTAINS:
             return compare_value in item_value if isinstance(item_value, str) else False
         elif operation == FilterOperation.NOT_CONTAINS:

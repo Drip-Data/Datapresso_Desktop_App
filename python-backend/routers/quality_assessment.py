@@ -1,13 +1,33 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from schemas import QualityAssessmentRequest # Changed import from models.request_models to schemas
-from models.response_models import QualityAssessmentResponse, BaseResponse
+from sqlalchemy.ext.asyncio import AsyncSession
+from db.database import get_async_db
+import schemas
+from schemas import QualityAssessmentRequest, QualityAssessmentResponse, BaseResponse, Task as TaskSchema # Consolidated imports
 from services.quality_assessment_service import QualityAssessmentService
 import logging
 import time
-from typing import Any
+from typing import Any, Union
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.get("/test")
+async def test_quality_assessment():
+    """质量评估模块联调测试端点"""
+    try:
+        return {
+            "status": "success",
+            "message": "Quality assessment module is working",
+            "module": "quality_assessment",
+            "endpoints": [
+                "/assess - POST: 同步质量评估",
+                "/async_assess - POST: 异步质量评估",
+                "/task/{task_id} - GET: 查询任务结果"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error in quality assessment test: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 def get_quality_assessment_service():
     """依赖注入：获取质量评估服务实例"""
@@ -39,7 +59,7 @@ async def assess_quality(
         result = await service.assess_quality(
             data=request.data,
             dimensions=request.dimensions,
-            schema=request.schema,
+            schema=request.schema_definition,
             reference_data=request.reference_data,
             weights=request.weights,
             threshold_scores=request.threshold_scores,
@@ -75,7 +95,8 @@ async def assess_quality(
 async def async_assess_quality(
     request: QualityAssessmentRequest,
     background_tasks: BackgroundTasks,
-    service: QualityAssessmentService = Depends(get_quality_assessment_service)
+    service: QualityAssessmentService = Depends(get_quality_assessment_service),
+    db: AsyncSession = Depends(get_async_db) # Added db session
 ):
     """
     异步执行质量评估，适用于大数据集
@@ -86,8 +107,14 @@ async def async_assess_quality(
         logger.info(f"Received async quality assessment request (id: {request.request_id}) with {len(request.data)} items")
         
         # 将评估任务加入后台任务队列
-        task_id = await service.start_async_assessment_task(request)
-        background_tasks.add_task(service.execute_async_assessment_task, task_id)
+        task_id = await service.start_async_assessment_task(request, db) # Pass db
+        
+        async def execute_task_with_db_session(tid: str):
+            async for session in get_async_db():
+                await service.execute_async_assessment_task(tid, session) # Pass db
+                break
+
+        background_tasks.add_task(execute_task_with_db_session, task_id)
         
         return BaseResponse(
             status="success",
@@ -98,37 +125,53 @@ async def async_assess_quality(
         logger.error(f"Error in async_assess_quality (id: {request.request_id}): {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/task/{task_id}", response_model=Any)
+@router.get("/task/{task_id}", response_model=Union[TaskSchema, QualityAssessmentResponse, BaseResponse]) # Updated response_model
 async def get_assessment_task_result(
     task_id: str,
-    service: QualityAssessmentService = Depends(get_quality_assessment_service)
+    service: QualityAssessmentService = Depends(get_quality_assessment_service),
+    db: AsyncSession = Depends(get_async_db) # Added db session
 ):
     """获取异步评估任务结果"""
     try:
         # 获取任务状态和结果
-        task_status = await service.get_task_status(task_id)
+        task_schema = await service.get_task_status(task_id, db) # Pass db
         
-        if task_status["status"] == "completed":
-            return QualityAssessmentResponse(**task_status["result"])
-        elif task_status["status"] == "running":
-            return BaseResponse(
-                status="pending",
-                message=f"Task {task_id} is still running. Progress: {task_status.get('progress', 0)}%",
-                request_id=task_id
-            )
-        elif task_status["status"] == "failed":
+        if not task_schema:
             return BaseResponse(
                 status="error",
-                message=f"Task {task_id} failed: {task_status.get('error', 'Unknown error')}",
+                message=f"Task {task_id} not found",
+                request_id=task_id,
+                error_code="TASK_NOT_FOUND"
+            )
+
+        if task_schema.status == "completed":
+            if task_schema.result:
+                try:
+                    return QualityAssessmentResponse(**task_schema.result)
+                except Exception as e:
+                    logger.error(f"Error parsing completed quality assessment task result for {task_id}: {str(e)}")
+                    return BaseResponse(status="error", message="Error parsing task result.", request_id=task_id)
+            else:
+                 return BaseResponse(status="success", message="Task completed, but no result data found.", request_id=task_id)
+
+        elif task_schema.status == "running" or task_schema.status == "pending":
+            return BaseResponse(
+                status="pending",
+                message=f"Task {task_id} is {task_schema.status}. Progress: {task_schema.progress * 100 if task_schema.progress is not None else 0:.0f}%",
+                request_id=task_id
+            )
+        elif task_schema.status == "failed":
+            return BaseResponse(
+                status="error",
+                message=f"Task {task_id} failed: {task_schema.error or 'Unknown error'}",
                 request_id=task_id,
                 error_code="TASK_FAILED"
             )
         else:
-            return BaseResponse(
-                status="error", 
-                message=f"Task {task_id} not found",
-                request_id=task_id,
-                error_code="TASK_NOT_FOUND"
+             return BaseResponse(
+                status="unknown",
+                message=f"Task {task_id} has an unknown status: {task_schema.status}",
+                request_id=task_id
             )
     except Exception as e:
         logger.error(f"Error retrieving task {task_id}: {str(e)}", exc_info=True)

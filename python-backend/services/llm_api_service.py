@@ -71,9 +71,32 @@ class LlmApiService:
             结果字典
         """
         logger.debug(f"Invoking LLM with provider {provider}, model {model}")
+
+        if provider.lower() == "mock":
+            logger.info(f"Using mock provider for model {model}. Returning predefined mock response.")
+            # 模拟LLM调用延迟
+            await asyncio.sleep(0.1) # 100ms delay
+            mock_text = f"This is a mock response for model '{model}' with prompt: '{prompt[:50]}...'"
+            mock_tokens_used = len(prompt.split()) + len(mock_text.split())
+            return {
+                "text": mock_text,
+                "tokens_used": mock_tokens_used,
+                "token_breakdown": {
+                    "prompt_tokens": len(prompt.split()),
+                    "completion_tokens": len(mock_text.split())
+                },
+                "finish_reason": "stop",
+                "cost": 0.0, # Mock calls are free
+                "provider": "mock",
+                "model_used": model # Echo back the requested model
+            }
         
         # 确定API密钥
         api_key = os.environ.get(f"{provider.upper()}_API_KEY")
+        if not api_key:
+            logger.warning(f"API key for provider {provider.upper()} not found. LLM call will likely fail.")
+            # Optionally, you could raise an error here or return a specific "API key missing" response
+            # For now, let it proceed and fail at the provider level if key is truly required.
         
         try:
             # 创建LLM提供商实例
@@ -340,49 +363,97 @@ class LlmApiService:
         Returns:
             提供商和模型信息字典
         """
-        return {
-            "openai": {
-                "models": OPENAI_MODELS,
-                "pricing": OPENAI_PRICING,
-                "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": True,
-                    "embeddings": True,
-                    "batch": True
-                }
-            },
-            "anthropic": {
-                "models": ANTHROPIC_MODELS,
-                "pricing": ANTHROPIC_PRICING,
-                "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": True,
-                    "embeddings": False,
-                    "batch": True
-                }
-            },
-            "gemini": {
-                "models": GEMINI_MODELS,
-                "pricing": GEMINI_PRICING,
-                "has_api_key": bool(os.environ.get("GEMINI_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": True,
-                    "embeddings": True,
-                    "batch": False
-                }
-            },
-            "deepseek": {
-                "models": DEEPSEEK_MODELS,
-                "pricing": DEEPSEEK_PRICING,
-                "has_api_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": False,
-                    "embeddings": True,
-                    "batch": False
+        try:
+            logger.info("Getting providers info...")
+            
+            result = {
+                "openai": {
+                    "models": OPENAI_MODELS,
+                    "pricing": OPENAI_PRICING,
+                    "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
+                    "capabilities": {
+                        "text": True,
+                        "images": True,
+                        "embeddings": True,
+                        "batch": True
+                    }
+                },
+                "anthropic": {
+                    "models": ANTHROPIC_MODELS,
+                    "pricing": ANTHROPIC_PRICING,
+                    "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+                    "capabilities": {
+                        "text": True,
+                        "images": True,
+                        "embeddings": False,
+                        "batch": True
+                    }
+                },
+                "gemini": {
+                    "models": GEMINI_MODELS,
+                    "pricing": GEMINI_PRICING,
+                    "has_api_key": bool(os.environ.get("GEMINI_API_KEY")),
+                    "capabilities": {
+                        "text": True,
+                        "images": True,
+                        "embeddings": True,
+                        "batch": False
+                    }
+                },
+                "deepseek": {
+                    "models": DEEPSEEK_MODELS,
+                    "pricing": DEEPSEEK_PRICING,
+                    "has_api_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
+                    "capabilities": {
+                        "text": True,
+                        "images": False,
+                        "embeddings": True,
+                        "batch": False
+                    }
                 }
             }
-        }
+            
+            logger.info("Successfully built providers info")
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting providers info: {str(e)}", exc_info=True)
+            raise
+
+    async def test_provider_connection(self, provider_id: str) -> Dict[str, Any]:
+        """
+        测试特定LLM提供商的连接。
+        尝试创建一个提供商实例并执行一个简单的API调用。
+        """
+        logger.info(f"Attempting to test connection for provider: {provider_id}")
+        api_key = os.environ.get(f"{provider_id.upper()}_API_KEY")
+        
+        if not api_key:
+            return {
+                "provider_name": provider_id,
+                "test_passed": False,
+                "message": f"API Key for {provider_id.capitalize()} is not configured in environment variables."
+            }
+
+        try:
+            llm_provider_instance = LLMProviderFactory.create_provider(
+                provider_id=provider_id,
+                api_key=api_key,
+            )
+            
+            models = await llm_provider_instance.list_models()
+            
+            return {
+                "provider_name": provider_id,
+                "test_passed": True,
+                "message": f"Connection to {provider_id.capitalize()} successful. Found {len(models)} models.",
+                "details": {"models_found": len(models)}
+            }
+        except Exception as e:
+            logger.error(f"Connection test failed for provider {provider_id}: {str(e)}", exc_info=True)
+            return {
+                "provider_name": provider_id,
+                "test_passed": False,
+                "message": f"Connection to {provider_id.capitalize()} failed: {str(e)}",
+                "details": {"error": str(e)}
+            }

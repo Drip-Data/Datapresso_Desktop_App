@@ -142,7 +142,7 @@ export class LlmApi {
    */
   static async getProviders() {
     try {
-      return await api.getLlmProviders();
+      return await api.fetchLLMProviders(); // Changed to use the correct function name from electronBridge
     } catch (error) {
       console.error('Error getting LLM providers:', error);
       throw error;

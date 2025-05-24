@@ -2,10 +2,9 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_async_db
-from schemas import DataGenerationRequest, Task as TaskSchema # Changed import for DataGenerationRequest, added TaskSchema
-from models.response_models import DataGenerationResponse, BaseResponse # Changed to direct import
-from services.data_generation_service import DataGenerationService # Changed to direct import
-import schemas # Changed from 'from .. import schemas'
+import schemas
+from schemas import DataGenerationRequest, DataGenerationResponse, BaseResponse, Task as TaskSchema # Consolidated imports
+from services.data_generation_service import DataGenerationService
 import logging
 import time
 from typing import Any, Union # Added Union
@@ -13,13 +12,31 @@ from typing import Any, Union # Added Union
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+@router.get("/test")
+async def test_data_generation():
+    """数据生成模块联调测试端点"""
+    try:
+        return {
+            "status": "success",
+            "message": "Data generation module is working",
+            "module": "data_generation",
+            "endpoints": [
+                "/generate - POST: 同步生成数据",
+                "/async_generate - POST: 异步生成数据",
+                "/task/{task_id} - GET: 查询任务结果"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error in data generation test: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
 def get_data_generation_service():
     """依赖注入：获取数据生成服务实例"""
     return DataGenerationService()
 
 @router.post("/generate", response_model=DataGenerationResponse)
 async def generate_data(
-    request: schemas.DataGenerationRequest, # Use the schema from schemas.py
+    request: DataGenerationRequest, # 直接使用导入的类型
     service: DataGenerationService = Depends(get_data_generation_service)
 ):
     """
@@ -76,7 +93,7 @@ async def generate_data(
 
 @router.post("/async_generate", response_model=BaseResponse)
 async def async_generate_data(
-    request: schemas.DataGenerationRequest, # Use the schema from schemas.py
+    request: DataGenerationRequest, # 直接使用导入的类型
     background_tasks: BackgroundTasks,
     service: DataGenerationService = Depends(get_data_generation_service),
     db: AsyncSession = Depends(get_async_db) # Added db session

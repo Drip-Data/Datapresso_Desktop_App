@@ -50,8 +50,18 @@ export const LLMConfigProvider: React.FC<{ children: ReactNode }> = ({ children 
     const loadProviders = async () => {
       try {
         setLoading(true);
-        const config = await fetchLLMProviders(); // 调用 apiAdapter 中的函数
-        setProvidersConfig(config);
+        console.log("Attempting to fetch LLM providers...");
+        const rawConfig = await fetchLLMProviders(); // 调用 apiAdapter 中的函数
+        console.log("Raw fetched LLM providers config:", rawConfig); // Log raw response
+        // Ensure the structure matches LLMProvidersConfig
+        if (rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)) {
+          setProvidersConfig(rawConfig);
+          console.log("Set providersConfig to:", rawConfig);
+        } else {
+          console.error("Fetched config is not in expected LLMProvidersConfig format:", rawConfig);
+          setError(new Error('Fetched LLM providers config is not in expected format.'));
+          setProvidersConfig(null);
+        }
         setError(null);
       } catch (err) {
         console.error("Failed to fetch LLM providers config:", err);

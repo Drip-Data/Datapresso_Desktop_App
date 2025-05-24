@@ -25,26 +25,47 @@ class BaseRequest(BaseModel): # Moved BaseRequest here
         "arbitrary_types_allowed": True, # Still relevant for Pydantic V1 compatibility if needed by some models
     }
 
+class BaseResponse(BaseModel):
+    """基础响应模型"""
+    status: str  # "success" 或 "error"
+    message: str
+    request_id: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+    execution_time_ms: Optional[float] = None  # 执行时间（毫秒）
+    error_code: Optional[str] = None  # 错误代码(仅当status为error时)
+    warnings: Optional[List[str]] = None  # 警告信息(不影响执行)
+    
+    model_config = { # Pydantic V2 style
+        "validate_assignment": True,
+        "arbitrary_types_allowed": True,
+        "from_attributes": True # Pydantic V2 equivalent of orm_mode
+    }
+
 # --- FilterOperation Enum ---
 class FilterOperation(str, Enum):
-    EQUALS = "equals"
-    NOT_EQUALS = "not_equals"
-    GREATER_THAN = "greater_than"
-    LESS_THAN = "less_than"
+    EQUALS = "eq"  # Changed to common short form
+    NOT_EQUALS = "ne" # Changed
+    GREATER_THAN = "gt" # Changed
+    GREATER_THAN_EQUALS = "gte" # Added
+    LESS_THAN = "lt" # Changed
+    LESS_THAN_EQUALS = "lte" # Added
     CONTAINS = "contains"
     NOT_CONTAINS = "not_contains"
     STARTS_WITH = "starts_with"
     ENDS_WITH = "ends_with"
-    IN_RANGE = "in_range"
+    IN_RANGE = "in_range" # For this, value would be a tuple/list [min, max]
     NOT_IN_RANGE = "not_in_range"
     REGEX_MATCH = "regex_match"
     IS_NULL = "is_null"
     IS_NOT_NULL = "is_not_null"
+    IN = "in" # Added for checking if value is in a list
+    NOT_IN = "not_in" # Added
 
 # --- FilterCondition Schema ---
 class FilterCondition(BaseModel): # Assuming BaseModel is Pydantic's BaseModel, which is imported at the top
+    type: Optional[str] = Field("field", description="过滤器类型 (e.g., 'field', 'threshold', 'range', 'regex')") # Added type field
     field: str = Field(..., description="要过滤的字段名")
-    operation: FilterOperation = Field(..., description="过滤操作符") # Changed type to FilterOperation Enum, Renamed from operator
+    operation: FilterOperation = Field(..., alias="operator", description="过滤操作符 (映射自前端的 operator 字段)") # Support front-end operator field
     value: Any = Field(None, description="用于比较的值 (对于 IS_NULL/IS_NOT_NULL 可以为 None)") # Made value optional and default to None
     case_sensitive: Optional[bool] = Field(True, description="是否区分大小写 (主要用于字符串操作)") # Uncommented and ensured it exists
 
@@ -125,6 +146,42 @@ class TaskInDBBase(TaskBase):
 
 class Task(TaskInDBBase): # Schema for reading/returning task data
     pass
+
+# --- Seed Data Schemas ---
+class SeedDataBase(OrmBaseModel):
+    filename: str
+    saved_path: str
+    file_size: int
+    record_count: int
+    data_type: Optional[str] = None
+    status: str = "uploaded" # e.g., "uploaded", "validated", "indexed", "failed"
+    
+class SeedDataCreate(SeedDataBase):
+    id: Optional[str] = Field(default_factory=generate_uuid_str)
+    upload_date: datetime = Field(default_factory=datetime.now)
+
+class SeedDataUpdate(OrmBaseModel):
+    filename: Optional[str] = None
+    saved_path: Optional[str] = None
+    file_size: Optional[int] = None
+    record_count: Optional[int] = None
+    data_type: Optional[str] = None
+    status: Optional[str] = None
+    upload_date: Optional[datetime] = None # Should not be updated usually
+    updated_at: Optional[datetime] = None
+
+class SeedDataInDBBase(SeedDataBase):
+    id: str
+    upload_date: datetime
+    updated_at: datetime = Field(default_factory=datetime.now) # Auto-update on modification
+
+class SeedData(SeedDataInDBBase):
+    pass
+
+class SeedDataListResponse(BaseModel):
+    status: str
+    message: Optional[str] = None
+    data: Dict[str, Any] # Contains items: List[SeedData], total_items, current_page, page_size
 
 # --- Project Schemas ---
 
@@ -345,6 +402,36 @@ class LlmBatchCreateRequest(BaseRequest):
     presence_penalty: Optional[float] = Field(None, ge=-2.0, le=2.0, description="存在惩罚")
     stop_sequences: Optional[List[str]] = Field(None, description="停止序列")
 
+class LlmApiResponse(BaseResponse): # Moved from models/response_models.py
+    """LLM API响应模型"""
+    result: Union[str, Dict[str, Any]] = Field(..., description="生成结果")
+    model: str = Field(..., description="使用的模型")
+    tokens_used: Optional[int] = Field(None, description="使用的token数")
+    token_breakdown: Optional[Dict[str, int]] = Field(None, description="token使用明细")
+    finish_reason: Optional[str] = Field(None, description="完成原因('stop','length'等)")
+    provider: Optional[str] = Field(None, description="使用的提供商")
+    cost: Optional[float] = Field(None, description="估计成本(美元)")
+
+class EmbeddingsResponse(BaseResponse): # Moved from models/response_models.py
+    """嵌入向量响应模型"""
+    embedding: List[float] = Field(..., description="嵌入向量")
+    dimensions: int = Field(..., description="向量维度")
+    model: str = Field(..., description="使用的模型")
+    provider: str = Field(..., description="使用的提供商")
+    tokens: int = Field(..., description="使用的token数")
+    cost: float = Field(..., description="估计成本(美元)")
+
+class DocumentProcessResponse(BaseResponse): # Moved from models/response_models.py
+    """文档处理响应模型"""
+    chunks: List[str] = Field(..., description="文档块")
+    embeddings: List[List[float]] = Field(..., description="嵌入向量列表")
+    count: int = Field(..., description="块数量")
+    model: str = Field(..., description="使用的模型")
+    provider: str = Field(..., description="使用的提供商")
+    total_tokens: int = Field(..., description="使用的token总数")
+    cost: float = Field(..., description="估计成本(美元)")
+    document_name: Optional[str] = Field(None, description="文档名称")
+
 # --- Quality Assessment Schemas ---
 
 class QualityDimension(str, Enum):
@@ -392,6 +479,124 @@ class QualityAssessmentRequest(BaseRequest):
     #             if score < 0 or score > 1:
     #                 raise ValueError(f"维度'{dim_name}'的阈值必须在0-1之间")
     #     return thresholds
+
+# --- Data Filtering Response Schemas ---
+class DataFilteringResponse(BaseResponse): # Moved from models/response_models.py
+    """数据过滤响应模型"""
+    filtered_data: List[Dict[str, Any]] = Field(..., description="过滤后的数据")
+    total_count: int = Field(..., description="原始数据总数")
+    filtered_count: int = Field(..., description="过滤后的数据数量")
+    filter_summary: Optional[Dict[str, Any]] = Field(None, description="过滤摘要")
+    page_info: Optional[Dict[str, Any]] = Field(None, description="分页信息")
+
+# --- Data Generation Response Schemas ---
+class GeneratedDataStats(BaseModel): # Moved from models/response_models.py
+    """生成数据统计信息"""
+    field_distributions: Dict[str, Any] = Field(..., description="字段分布信息")
+    unique_values_count: Dict[str, int] = Field(..., description="唯一值计数")
+    min_max_values: Dict[str, Dict[str, Any]] = Field(..., description="最小最大值")
+    null_counts: Dict[str, int] = Field(..., description="空值计数")
+    schema_violations: Optional[List[Dict[str, Any]]] = Field(None, description="模式违规")
+    correlation_matrix: Optional[Dict[str, Dict[str, float]]] = Field(None, description="相关性矩阵")
+
+class DataGenerationResponse(BaseResponse): # Moved from models/response_models.py
+    """数据生成响应模型"""
+    generated_data: List[Dict[str, Any]] = Field(..., description="生成的数据")
+    generation_method: str = Field(..., description="使用的生成方法")
+    count: int = Field(..., description="生成的数据数量")
+    stats: Optional[GeneratedDataStats] = Field(None, description="数据统计")
+    warnings: Optional[List[str]] = Field(None, description="生成时的警告")
+    seed_used: Optional[int] = Field(None, description="使用的随机种子")
+    processing_info: Optional[Dict[str, Any]] = Field(None, description="处理信息")
+
+# --- Evaluation Response Schemas ---
+class MetricScore(BaseModel): # Moved from models/response_models.py
+    """指标得分模型"""
+    metric: str = Field(..., description="指标名称")
+    score: float = Field(..., description="得分")
+    details: Optional[Dict[str, Any]] = Field(None, description="详细信息")
+    passed: Optional[bool] = Field(None, description="是否通过阈值")
+    issues: Optional[List[Dict[str, Any]]] = Field(None, description="问题列表")
+    recommendations: Optional[List[str]] = Field(None, description="建议")
+
+class EvaluationResponse(BaseResponse): # Moved from models/response_models.py
+    """评估响应模型"""
+    overall_score: float = Field(..., description="总体评分")
+    metric_scores: List[MetricScore] = Field(..., description="各指标得分")
+    visualization_data: Optional[Dict[str, Any]] = Field(None, description="可视化数据")
+    recommendations: Optional[List[str]] = Field(None, description="建议")
+    passed: Optional[bool] = Field(None, description="是否通过阈值")
+    details_by_field: Optional[Dict[str, List[Dict[str, Any]]]] = Field(None, description="字段详情")
+
+# --- LlamaFactory Response Schemas ---
+class LlamaFactoryResponse(BaseResponse): # Moved from models/response_models.py
+    """LlamaFactory响应模型"""
+    model_config = {'protected_namespaces': ()} # Allow model_name and model_info
+
+    output_data: Dict[str, Any] = Field(..., description="输出数据")
+    model_name: str = Field(..., description="模型名称")
+    operation: str = Field(..., description="执行的操作")
+    metrics: Optional[Dict[str, Any]] = Field(None, description="评估指标")
+    resources_used: Optional[Dict[str, Any]] = Field(None, description="使用的资源")
+    model_info: Optional[Dict[str, Any]] = Field(None, description="模型信息")
+    checkpoint_path: Optional[str] = Field(None, description="检查点路径")
+    logs: Optional[List[str]] = Field(None, description="处理日志")
+
+# --- Quality Assessment Response Schemas ---
+class DimensionAssessment(BaseModel): # Moved from models/response_models.py
+    """维度评估结果"""
+    dimension: str = Field(..., description="评估维度")
+    score: float = Field(..., ge=0.0, le=1.0, description="得分(0.0-1.0)")
+    issues: List[Dict[str, Any]] = Field(..., description="问题列表")
+    recommendations: List[str] = Field(..., description="建议列表")
+    passed: Optional[bool] = Field(None, description="是否通过阈值")
+    sample_issues: Optional[List[Dict[str, Any]]] = Field(None, description="示例问题")
+
+class QualityAssessmentResponse(BaseResponse): # Moved from models/response_models.py
+    """质量评估响应模型"""
+    overall_score: float = Field(..., ge=0.0, le=1.0, description="总体评分(0.0-1.0)")
+    dimension_scores: List[DimensionAssessment] = Field(..., description="各维度评估")
+    summary: Dict[str, Any] = Field(..., description="评估摘要")
+    passed_threshold: Optional[bool] = Field(None, description="是否通过总体阈值")
+    report_url: Optional[str] = Field(None, description="报告URL(如生成了报告)")
+    field_scores: Optional[Dict[str, float]] = Field(None, description="字段评分")
+    improvement_priority: Optional[List[Dict[str, Any]]] = Field(None, description="改进优先级")
+    visualizations: Optional[Dict[str, Any]] = Field(None, description="可视化数据")
+
+# --- Other Response Schemas ---
+class VisualizationResponse(BaseResponse): # Moved from models/response_models.py
+    """可视化响应模型"""
+    chart_data: Optional[Dict[str, Any]] = Field(None, description="图表数据")
+    chart_config: Optional[Dict[str, Any]] = Field(None, description="图表配置")
+    chart_type: Optional[str] = Field(None, description="图表类型")
+    visualization_id: Optional[str] = Field(None, description="可视化ID")
+    image_url: Optional[str] = Field(None, description="图片URL")
+    html_content: Optional[str] = Field(None, description="HTML内容")
+
+class DataImportResponse(BaseResponse): # Moved from models/response_models.py
+    """数据导入响应模型"""
+    data: List[Dict[str, Any]] = Field(..., description="导入的数据")
+    file_info: Dict[str, Any] = Field(..., description="文件信息")
+    inferred_schema: Optional[Dict[str, Any]] = Field(None, description="推断的数据模式") # Renamed from schema
+    summary: Optional[Dict[str, Any]] = Field(None, description="数据摘要")
+
+class DataExportResponse(BaseResponse): # Moved from models/response_models.py
+    """数据导出响应模型"""
+    file_url: str = Field(..., description="导出文件URL")
+    file_path: str = Field(..., description="导出文件路径")
+    file_size: int = Field(..., description="文件大小(字节)")
+    row_count: int = Field(..., description="导出记录数")
+
+# --- LlamaFactory Schemas ---
+class LlamaFactoryConfigRequest(BaseRequest): # Renamed from ConfigRequest
+    config_data: Dict[str, Any] = Field(..., description="LlamaFactory配置数据")
+    config_type: str = Field(..., description="配置类型 (e.g., 'train', 'eval', 'infer')")
+
+class LlamaFactoryTaskRequest(BaseRequest): # Renamed from TaskRequest
+    task_type: str = Field(..., description="LlamaFactory任务类型 (e.g., 'sft', 'dpo', 'predict')")
+    config_name: str = Field(..., description="要使用的配置名称")
+    arguments: Optional[Dict[str, Any]] = Field(None, description="任务特定参数")
+    project_id: Optional[str] = Field(None, description="关联的项目ID") # Added project_id
 
 # Update forward references
 # For Pydantic V2, model_rebuild() is preferred if forward refs are complex or for post-init validation.

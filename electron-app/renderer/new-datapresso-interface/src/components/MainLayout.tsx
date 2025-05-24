@@ -15,6 +15,8 @@ const PAGE_TITLES: { [key: string]: string } = {
   '/api-keys': 'API密钥管理',
   '/help': '帮助中心',
   '/llm-playground': 'LLM 实验场', // Added title for LLM Playground
+  '/module-test': '模块测试', // Added title for Module Test
+  '/end-to-end-test': '端到端测试', // Added title for End-to-End Test
 };
 
 const MainLayout: React.FC = () => {

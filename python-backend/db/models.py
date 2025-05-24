@@ -1,113 +1,182 @@
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, Text, ForeignKey, JSON
-from sqlalchemy.ext.declarative import declarative_base
+"""
+数据库模型定义
+"""
+
+from sqlalchemy import Column, String, Integer, Float, DateTime, Boolean, Text, JSON, ForeignKey
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
+from db.database import Base
 import uuid
+from datetime import datetime
 
-Base = declarative_base()
 
 def generate_uuid():
-    """生成唯一ID"""
+    """生成UUID"""
     return str(uuid.uuid4())
 
-class Project(Base):
-    """项目模型"""
-    __tablename__ = "projects"
-    
-    id = Column(String, primary_key=True, default=generate_uuid)
-    name = Column(String, nullable=False)
-    description = Column(Text)
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    config = Column(JSON)  # 项目配置
-    
-    # 关系
-    datasets = relationship("Dataset", back_populates="project", cascade="all, delete-orphan")
-    tasks = relationship("Task", back_populates="project", cascade="all, delete-orphan")
-    evaluations = relationship("Evaluation", back_populates="project", cascade="all, delete-orphan")
 
-class Dataset(Base):
-    """数据集模型"""
-    __tablename__ = "datasets"
+class BaseModel(Base):
+    """基础模型类"""
+    __abstract__ = True
     
-    id = Column(String, primary_key=True, default=generate_uuid)
-    project_id = Column(String, ForeignKey("projects.id"))
-    name = Column(String, nullable=False)
-    description = Column(Text)
-    file_path = Column(String)  # 相对路径
-    format = Column(String)  # csv, json, etc.
-    size = Column(Integer)  # 文件大小(字节)
-    record_count = Column(Integer)  # 记录数量
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
-    dataset_metadata = Column(JSON)  # 元数据 (SQLAlchemy ORM 属性名和数据库列名统一)
-    
-    # 关系
-    project = relationship("Project", back_populates="datasets")
-    filters = relationship("Filter", back_populates="dataset", cascade="all, delete-orphan")
+    id = Column(String, primary_key=True, default=generate_uuid, index=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
+    updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
+    is_deleted = Column(Boolean, default=False, index=True)
 
-class Task(Base):
-    """任务模型"""
-    __tablename__ = "tasks"
-    
-    id = Column(String, primary_key=True, default=generate_uuid)
-    project_id = Column(String, ForeignKey("projects.id"))
-    name = Column(String, nullable=False)
-    task_type = Column(String, nullable=False)  # filtering, generation, evaluation, etc.
-    status = Column(String, default="pending")  # pending, running, completed, failed, canceled
-    progress = Column(Float, default=0.0)  # 0.0 - 1.0
-    created_at = Column(DateTime, server_default=func.now())
-    started_at = Column(DateTime)
-    completed_at = Column(DateTime)
-    parameters = Column(JSON)  # 任务参数
-    result = Column(JSON)  # 结果摘要
-    error = Column(Text)  # 错误信息
-    
-    # 关系
-    project = relationship("Project", back_populates="tasks")
 
-class Filter(Base):
-    """过滤器模型"""
-    __tablename__ = "filters"
+class SeedData(BaseModel):
+    """种子数据模型"""
+    __tablename__ = "seed_data"
     
-    id = Column(String, primary_key=True, default=generate_uuid)
-    dataset_id = Column(String, ForeignKey("datasets.id"))
-    name = Column(String, nullable=False)
-    description = Column(Text)
-    filter_type = Column(String)  # 过滤器类型
-    conditions = Column(JSON)  # 过滤条件
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    filename = Column(String, nullable=False, index=True)
+    original_filename = Column(String, nullable=False)
+    saved_path = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    record_count = Column(Integer, default=0)
+    data_type = Column(String, index=True)  # general_qa, coding_tasks, etc.
+    status = Column(String, default="uploaded", index=True)  # uploaded, validated, indexed, failed
+    upload_date = Column(DateTime, default=func.now(), nullable=False, index=True)
+    extra_metadata = Column(JSON, default=dict)  # 额外的元数据 # Renamed from metadata
     
-    # 关系
-    dataset = relationship("Dataset", back_populates="filters")
+    # 关联的任务
+    generation_tasks = relationship("GenerationTask", back_populates="seed_data")
+    assessment_tasks = relationship("AssessmentTask", back_populates="seed_data")
 
-class Evaluation(Base):
-    """评估模型"""
-    __tablename__ = "evaluations"
-    
-    id = Column(String, primary_key=True, default=generate_uuid)
-    project_id = Column(String, ForeignKey("projects.id"))
-    name = Column(String, nullable=False)
-    description = Column(Text)
-    evaluation_type = Column(String)  # 评估类型
-    dataset_id = Column(String)  # 相关数据集ID
-    parameters = Column(JSON)  # 评估参数
-    results = Column(JSON)  # 评估结果
-    created_at = Column(DateTime, server_default=func.now())
-    
-    # 关系
-    project = relationship("Project", back_populates="evaluations")
 
-class Model(Base):
-    """模型信息"""
-    __tablename__ = "models"
+class Task(BaseModel):
+    """任务基础模型"""
+    __abstract__ = True
     
-    id = Column(String, primary_key=True, default=generate_uuid)
-    name = Column(String, nullable=False)
-    category = Column(String)  # Renamed from model_type, e.g., llm, classifier, etc.
-    path = Column(String)  # 模型路径
-    parameters = Column(JSON)  # 模型参数
-    metrics = Column(JSON)  # 模型指标
-    created_at = Column(DateTime, server_default=func.now())
-    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    name = Column(String, nullable=False) # Renamed from task_name
+    task_type = Column(String, nullable=False, index=True)
+    status = Column(String, default="pending", index=True)  # pending, running, completed, failed, cancelled
+    progress = Column(Float, default=0.0)
+    parameters = Column(JSON, default=dict) # Renamed from config
+    result = Column(JSON, default=dict)
+    error = Column(Text, nullable=True) # Renamed from error_message
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+
+class GenerationTask(Task):
+    """数据生成任务"""
+    __tablename__ = "generation_tasks"
+    
+    seed_data_id = Column(String, ForeignKey("seed_data.id"), nullable=True, index=True)
+    generation_method = Column(String, nullable=False)  # llm_based, template, variation
+    target_count = Column(Integer, nullable=False)
+    generated_count = Column(Integer, default=0)
+    llm_model = Column(String, nullable=True)
+    llm_params = Column(JSON, default=dict)
+    
+    # 关联
+    seed_data = relationship("SeedData", back_populates="generation_tasks")
+    generated_data = relationship("GeneratedData", back_populates="generation_task")
+
+
+class GeneratedData(BaseModel):
+    """生成的数据"""
+    __tablename__ = "generated_data"
+    
+    generation_task_id = Column(String, ForeignKey("generation_tasks.id"), nullable=False, index=True)
+    content = Column(Text, nullable=False)
+    generated_metadata = Column(JSON, default=dict) # Renamed from metadata
+    quality_score = Column(Float, nullable=True)
+    
+    # 关联
+    generation_task = relationship("GenerationTask", back_populates="generated_data")
+
+
+class AssessmentTask(Task):
+    """质量评估任务"""
+    __tablename__ = "assessment_tasks"
+    
+    seed_data_id = Column(String, ForeignKey("seed_data.id"), nullable=True, index=True)
+    generation_task_id = Column(String, ForeignKey("generation_tasks.id"), nullable=True, index=True)
+    assessment_metrics = Column(JSON, default=list)  # 评估指标列表
+    overall_score = Column(Float, nullable=True)
+    metric_scores = Column(JSON, default=dict)  # 各指标得分
+    
+    # 关联
+    seed_data = relationship("SeedData", back_populates="assessment_tasks")
+
+
+class FilteringTask(Task):
+    """数据筛选任务"""
+    __tablename__ = "filtering_tasks"
+    
+    source_data_type = Column(String, nullable=False)  # seed_data, generated_data
+    source_data_ids = Column(JSON, default=list)  # 源数据ID列表
+    filter_conditions = Column(JSON, default=list)  # 筛选条件
+    filtered_count = Column(Integer, default=0)
+    
+    # 关联的筛选结果
+    filtered_results = relationship("FilteredData", back_populates="filtering_task")
+
+
+class FilteredData(BaseModel):
+    """筛选结果数据"""
+    __tablename__ = "filtered_data"
+    
+    filtering_task_id = Column(String, ForeignKey("filtering_tasks.id"), nullable=False, index=True)
+    original_data_id = Column(String, nullable=False, index=True)  # 原始数据ID
+    original_data_type = Column(String, nullable=False)  # 原始数据类型
+    filtered_content = Column(Text, nullable=False)
+    filter_metadata = Column(JSON, default=dict)
+    
+    # 关联
+    filtering_task = relationship("FilteringTask", back_populates="filtered_results")
+
+
+class LLMProvider(BaseModel):
+    """LLM服务提供商配置"""
+    __tablename__ = "llm_providers"
+    
+    provider_name = Column(String, unique=True, nullable=False, index=True)
+    provider_type = Column(String, nullable=False)  # openai, anthropic, etc.
+    api_key = Column(String, nullable=True)  # 加密存储
+    api_base_url = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True, index=True)
+    config = Column(JSON, default=dict)  # 提供商特定配置
+    
+    # 使用统计
+    total_requests = Column(Integer, default=0)
+    total_tokens = Column(Integer, default=0)
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class ProjectConfig(BaseModel):
+    """项目配置"""
+    __tablename__ = "project_configs"
+    
+    project_name = Column(String, unique=True, nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    config_data = Column(JSON, default=dict)
+    is_active = Column(Boolean, default=True, index=True)
+
+
+class ApiUsageLog(BaseModel):
+    """API使用日志"""
+    __tablename__ = "api_usage_logs"
+    
+    endpoint = Column(String, nullable=False, index=True)
+    method = Column(String, nullable=False)
+    status_code = Column(Integer, nullable=False)
+    response_time = Column(Float, nullable=False)
+    request_size = Column(Integer, default=0)
+    response_size = Column(Integer, default=0)
+    user_agent = Column(String, nullable=True)
+    ip_address = Column(String, nullable=True, index=True)
+    error_message = Column(Text, nullable=True)
+
+
+class SystemMetrics(BaseModel):
+    """系统指标"""
+    __tablename__ = "system_metrics"
+    
+    metric_name = Column(String, nullable=False, index=True)
+    metric_value = Column(Float, nullable=False)
+    metric_unit = Column(String, nullable=True)
+    recorded_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    metric_metadata = Column(JSON, default=dict) # Renamed from metadata

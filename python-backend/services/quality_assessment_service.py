@@ -3,14 +3,10 @@ import logging
 import asyncio
 import uuid
 import time
-import math
-import os
-import json
-import pandas as pd
-from enum import Enum
-from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import datetime
-from schemas import QualityDimension, TaskCreate, TaskUpdate, Task as TaskSchema # Added Task schemas
+from sqlalchemy.ext.asyncio import AsyncSession
+import schemas
+from schemas import QualityAssessmentRequest, QualityDimension, TaskCreate, TaskUpdate, Task as TaskSchema, DimensionAssessment # Consolidated imports
 from core.quality_assessors.completeness_assessor import assess_completeness
 from core.quality_assessors.accuracy_assessor import assess_accuracy
 from core.quality_assessors.consistency_assessor import assess_consistency
@@ -23,8 +19,28 @@ from core.quality_assessors.diversity_assessor import assess_diversity
 # from core.quality_assessors.ethical_assessor import assess_ethical # Commented out missing module
 from db import operations as crud # Changed import
 from config import get_settings
+import os # Added os import
+import json # Added json import
+import numpy as np
 
 logger = logging.getLogger(__name__)
+
+def convert_numpy_types(obj):
+    """Convert numpy types to Python native types for JSON serialization"""
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.bool_):
+        return bool(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_types(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_types(item) for item in obj]
+    else:
+        return obj
 
 class QualityAssessmentService:
     """数据质量评估服务"""
@@ -67,210 +83,214 @@ class QualityAssessmentService:
         Returns:
             包含评估结果的字典
         """
-        logger.debug(f"Starting quality assessment for {len(data)} items in {len(dimensions)} dimensions")
-        
-        # 检查输入
-        if not data:
-            return {
-                "overall_score": 0,
-                "dimension_scores": [],
-                "summary": {"message": "Empty dataset"},
-                "passed_threshold": False
+        try: # Added try block
+            logger.debug(f"Starting quality assessment for {len(data)} items in {len(dimensions)} dimensions")
+            
+            # 检查输入
+            if not data:
+                return {
+                    "overall_score": 0,
+                    "dimension_scores": [],
+                    "summary": {"message": "Empty dataset"},
+                    "passed_threshold": False
+                }
+            
+            # 初始化默认权重
+            if not weights:
+                weights = {dim.value: 1.0/len(dimensions) for dim in dimensions}
+            else:
+                # 归一化权重
+                total_weight = sum(weights.values())
+                weights = {dim: weight/total_weight for dim, weight in weights.items()}
+            
+            # 初始化默认阈值
+            if not threshold_scores:
+                threshold_scores = {dim.value: 0.7 for dim in dimensions}
+            
+            # 评估各维度
+            dimension_assessments = []
+            total_weighted_score = 0
+            
+            # 保存字段得分
+            field_scores = {}
+            
+            for dimension in dimensions:
+                dim_value = dimension.value
+                
+                # 根据维度调用相应的评估函数
+                if dimension == QualityDimension.COMPLETENESS:
+                    assessment = await assess_completeness(data, schema, detail_level)
+                    # 保存字段完整性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["completeness"] = score
+                
+                elif dimension == QualityDimension.ACCURACY:
+                    assessment = await assess_accuracy(data, reference_data, schema, detail_level)
+                    # 保存字段准确性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["accuracy"] = score
+                
+                elif dimension == QualityDimension.CONSISTENCY:
+                    assessment = await assess_consistency(data, schema, detail_level)
+                    # 保存字段一致性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["consistency"] = score
+                
+                elif dimension == QualityDimension.VALIDITY:
+                    assessment = await assess_validity(data, schema, custom_rules, detail_level)
+                    # 保存字段有效性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["validity"] = score
+                
+                elif dimension == QualityDimension.UNIQUENESS:
+                    assessment = await assess_uniqueness(data, detail_level)
+                    # 保存字段唯一性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["uniqueness"] = score
+                
+                elif dimension == QualityDimension.DIVERSITY:
+                    assessment = await assess_diversity(data, detail_level)
+                    # 保存字段多样性得分
+                    if "field_scores" in assessment:
+                        for field, score in assessment["field_scores"].items():
+                            if field not in field_scores:
+                                field_scores[field] = {}
+                            field_scores[field]["diversity"] = score
+                
+                # elif dimension == QualityDimension.RELEVANCE: # Commented out call to missing function
+                #     assessment = await assess_relevance(data, reference_data, detail_level)
+                
+                # elif dimension == QualityDimension.TIMELINESS: # Commented out call to missing function
+                #     assessment = await assess_timeliness(data, custom_rules, detail_level)
+                #     # 保存字段时效性得分
+                #     if "field_scores" in assessment:
+                #         for field, score in assessment["field_scores"].items():
+                #             if field not in field_scores:
+                #                 field_scores[field] = {}
+                #             field_scores[field]["timeliness"] = score
+                
+                # elif dimension == QualityDimension.READABILITY: # Commented out call to missing function
+                #     assessment = await assess_readability(data, detail_level)
+                #     # 保存字段可读性得分
+                #     if "field_scores" in assessment:
+                #         for field, score in assessment["field_scores"].items():
+                #             if field not in field_scores:
+                #                 field_scores[field] = {}
+                #             field_scores[field]["readability"] = score
+                
+                # elif dimension == QualityDimension.ETHICAL: # Commented out call to missing function
+                #     assessment = await assess_ethical(data, custom_rules, detail_level)
+                
+                else:
+                    assessment = {"score": 0, "details": {"error": f"不支持的维度: {dim_value}"}}
+                    logger.warning(f"Unsupported quality dimension: {dim_value}")
+                
+                # 检查是否通过阈值
+                threshold = threshold_scores.get(dim_value, 0.7)
+                passed_threshold = assessment["score"] >= threshold
+                
+                # 计算加权得分
+                weight = weights.get(dim_value, 1.0/len(dimensions))
+                weighted_score = assessment["score"] * weight
+                total_weighted_score += weighted_score
+                
+                # 添加到评估结果
+                dimension_assessments.append({
+                    "dimension": dim_value,
+                    "score": assessment["score"],
+                    "weighted_score": weighted_score,
+                    "weight": weight,
+                    "passed": passed_threshold,
+                    "threshold": threshold,
+                    "issues": assessment.get("issues", []),
+                    "recommendations": self._generate_recommendations(dim_value, assessment)
+                })
+            
+            # 计算总体得分
+            overall_score = total_weighted_score
+            
+            # 检查是否通过总体阈值
+            overall_threshold = 0.7  # 默认总体阈值
+            passed_overall = overall_score >= overall_threshold
+            
+            # 生成评估摘要
+            summary = {
+                "assessed_items": len(data),
+                "assessed_dimensions": len(dimensions),
+                "passed_dimensions": sum(1 for dim in dimension_assessments if dim["passed"]),
+                "failed_dimensions": sum(1 for dim in dimension_assessments if not dim["passed"]),
+                "top_issues": self._extract_top_issues(dimension_assessments, limit=5)
             }
-        
-        # 初始化默认权重
-        if not weights:
-            weights = {dim.value: 1.0/len(dimensions) for dim in dimensions}
-        else:
-            # 归一化权重
-            total_weight = sum(weights.values())
-            weights = {dim: weight/total_weight for dim, weight in weights.items()}
-        
-        # 初始化默认阈值
-        if not threshold_scores:
-            threshold_scores = {dim.value: 0.7 for dim in dimensions}
-        
-        # 评估各维度
-        dimension_assessments = []
-        total_weighted_score = 0
-        
-        # 保存字段得分
-        field_scores = {}
-        
-        for dimension in dimensions:
-            dim_value = dimension.value
             
-            # 根据维度调用相应的评估函数
-            if dimension == QualityDimension.COMPLETENESS:
-                assessment = await assess_completeness(data, schema, detail_level)
-                # 保存字段完整性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["completeness"] = score
-            
-            elif dimension == QualityDimension.ACCURACY:
-                assessment = await assess_accuracy(data, reference_data, schema, detail_level)
-                # 保存字段准确性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["accuracy"] = score
-            
-            elif dimension == QualityDimension.CONSISTENCY:
-                assessment = await assess_consistency(data, schema, detail_level)
-                # 保存字段一致性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["consistency"] = score
-            
-            elif dimension == QualityDimension.VALIDITY:
-                assessment = await assess_validity(data, schema, custom_rules, detail_level)
-                # 保存字段有效性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["validity"] = score
-            
-            elif dimension == QualityDimension.UNIQUENESS:
-                assessment = await assess_uniqueness(data, detail_level)
-                # 保存字段唯一性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["uniqueness"] = score
-            
-            elif dimension == QualityDimension.DIVERSITY:
-                assessment = await assess_diversity(data, detail_level)
-                # 保存字段多样性得分
-                if "field_scores" in assessment:
-                    for field, score in assessment["field_scores"].items():
-                        if field not in field_scores:
-                            field_scores[field] = {}
-                        field_scores[field]["diversity"] = score
-            
-            # elif dimension == QualityDimension.RELEVANCE: # Commented out call to missing function
-            #     assessment = await assess_relevance(data, reference_data, detail_level)
-            
-            # elif dimension == QualityDimension.TIMELINESS: # Commented out call to missing function
-            #     assessment = await assess_timeliness(data, custom_rules, detail_level)
-            #     # 保存字段时效性得分
-            #     if "field_scores" in assessment:
-            #         for field, score in assessment["field_scores"].items():
-            #             if field not in field_scores:
-            #                 field_scores[field] = {}
-            #             field_scores[field]["timeliness"] = score
-            
-            # elif dimension == QualityDimension.READABILITY: # Commented out call to missing function
-            #     assessment = await assess_readability(data, detail_level)
-            #     # 保存字段可读性得分
-            #     if "field_scores" in assessment:
-            #         for field, score in assessment["field_scores"].items():
-            #             if field not in field_scores:
-            #                 field_scores[field] = {}
-            #             field_scores[field]["readability"] = score
-            
-            # elif dimension == QualityDimension.ETHICAL: # Commented out call to missing function
-            #     assessment = await assess_ethical(data, custom_rules, detail_level)
-            
-            else:
-                assessment = {"score": 0, "details": {"error": f"不支持的维度: {dim_value}"}}
-                logger.warning(f"Unsupported quality dimension: {dim_value}")
-            
-            # 检查是否通过阈值
-            threshold = threshold_scores.get(dim_value, 0.7)
-            passed_threshold = assessment["score"] >= threshold
-            
-            # 计算加权得分
-            weight = weights.get(dim_value, 1.0/len(dimensions))
-            weighted_score = assessment["score"] * weight
-            total_weighted_score += weighted_score
-            
-            # 添加到评估结果
-            dimension_assessments.append({
-                "dimension": dim_value,
-                "score": assessment["score"],
-                "weighted_score": weighted_score,
-                "weight": weight,
-                "passed": passed_threshold,
-                "threshold": threshold,
-                "issues": assessment.get("issues", []),
-                "recommendations": self._generate_recommendations(dim_value, assessment)
-            })
-        
-        # 计算总体得分
-        overall_score = total_weighted_score
-        
-        # 检查是否通过总体阈值
-        overall_threshold = 0.7  # 默认总体阈值
-        passed_overall = overall_score >= overall_threshold
-        
-        # 生成评估摘要
-        summary = {
-            "assessed_items": len(data),
-            "assessed_dimensions": len(dimensions),
-            "passed_dimensions": sum(1 for dim in dimension_assessments if dim["passed"]),
-            "failed_dimensions": sum(1 for dim in dimension_assessments if not dim["passed"]),
-            "top_issues": self._extract_top_issues(dimension_assessments, limit=5)
-        }
-        
-        # 生成改进优先级
-        improvement_priority = sorted(
-            dimension_assessments,
-            key=lambda x: (not x["passed"], x["weight"], -x["score"])
-        )
-        improvement_priority = [{
-            "dimension": dim["dimension"],
-            "current_score": dim["score"],
-            "target_score": max(dim["threshold"], dim["score"] + 0.1),
-            "impact": dim["weight"] * (max(dim["threshold"], dim["score"] + 0.1) - dim["score"])
-        } for dim in improvement_priority]
-        
-        # 计算字段总体质量得分
-        overall_field_scores = {}
-        for field, dim_scores in field_scores.items():
-            # 对每个字段计算加权平均得分
-            field_total_score = 0
-            field_total_weight = 0
-            
-            for dim, score in dim_scores.items():
-                dim_weight = weights.get(dim, 1.0/len(dimensions))
-                field_total_score += score * dim_weight
-                field_total_weight += dim_weight
-            
-            if field_total_weight > 0:
-                overall_field_scores[field] = field_total_score / field_total_weight
-            else:
-                overall_field_scores[field] = 0
-        
-        # 生成可视化数据
-        visualizations = await self._generate_visualizations(dimension_assessments, field_scores)
-        
-        # 如果需要生成报告，创建报告URL
-        report_url = None
-        if generate_report:
-            report_url = await self._generate_quality_report(
-                data, dimension_assessments, overall_score, summary, overall_field_scores,
-                report_format=report_format
+            # 生成改进优先级
+            improvement_priority = sorted(
+                dimension_assessments,
+                key=lambda x: (not x["passed"], x["weight"], -x["score"])
             )
-        
-        # 返回完整评估结果
-        return {
-            "overall_score": overall_score,
-            "passed_threshold": passed_overall,
-            "dimension_scores": dimension_assessments,
-            "summary": summary,
-            "improvement_priority": improvement_priority,
-            "field_scores": overall_field_scores,
-            "visualizations": visualizations,
-            "report_url": report_url
-        }
+            improvement_priority = [{
+                "dimension": dim["dimension"],
+                "current_score": dim["score"],
+                "target_score": max(dim["threshold"], dim["score"] + 0.1),
+                "impact": dim["weight"] * (max(dim["threshold"], dim["score"] + 0.1) - dim["score"])
+            } for dim in improvement_priority]
+            
+            # 计算字段总体质量得分
+            overall_field_scores = {}
+            for field, dim_scores in field_scores.items():
+                # 对每个字段计算加权平均得分
+                field_total_score = 0
+                field_total_weight = 0
+                
+                for dim, score in dim_scores.items():
+                    dim_weight = weights.get(dim, 1.0/len(dimensions))
+                    field_total_score += score * dim_weight
+                    field_total_weight += dim_weight
+                
+                if field_total_weight > 0:
+                    overall_field_scores[field] = field_total_score / field_total_weight
+                else:
+                    overall_field_scores[field] = 0
+            
+            # 生成可视化数据
+            visualizations = await self._generate_visualizations(dimension_assessments, field_scores)
+            
+            # 如果需要生成报告，创建报告URL
+            report_url = None
+            if generate_report:
+                report_url = await self._generate_quality_report(
+                    data, dimension_assessments, overall_score, summary, overall_field_scores,
+                    report_format=report_format
+                )
+            
+            # 返回完整评估结果
+            return {
+                "overall_score": overall_score,
+                "passed_threshold": passed_overall,
+                "dimension_scores": dimension_assessments,
+                "summary": summary,
+                "improvement_priority": improvement_priority,
+                "field_scores": overall_field_scores,
+                "visualizations": visualizations,
+                "report_url": report_url
+            }
+        except Exception as e: # Added try block
+            logger.exception(f"Unhandled error in assess_quality: {e}")
+            raise # Re-raise the exception after logging
 
     def _generate_recommendations(self, dimension: str, assessment: Dict[str, Any]) -> List[str]:
         """根据评估结果生成改进建议"""
@@ -443,7 +463,8 @@ class QualityAssessmentService:
         if report_format == "json":
             report_path = os.path.join(self.reports_dir, f"quality_report_{timestamp}_{report_id}.json")
             with open(report_path, 'w', encoding='utf-8') as f:
-                json.dump(report_data, f, indent=2, ensure_ascii=False)
+                # Convert numpy types to Python native types before JSON serialization
+                json.dump(convert_numpy_types(report_data), f, indent=2, ensure_ascii=False)
         
         elif report_format == "html":
             report_path = os.path.join(self.reports_dir, f"quality_report_{timestamp}_{report_id}.html")
@@ -698,7 +719,7 @@ class QualityAssessmentService:
         else:
             return "#e74c3c"  # 红色
     
-    async def start_async_assessment_task(self, request) -> str:
+    async def start_async_assessment_task(self, request: schemas.QualityAssessmentRequest, db: AsyncSession) -> str:
         """启动异步评估任务，返回任务ID"""
         task_id = str(uuid.uuid4())
         
@@ -710,25 +731,14 @@ class QualityAssessmentService:
             status="queued",
             parameters=request.dict(exclude_none=True)
         )
-        await crud.create_task(db=None, task_in=task_create_payload) # db session needs to be passed here
-                                                                    # This service method needs db session if it calls crud
+        await crud.create_task(db=db, task_in=task_create_payload)
         
         return task_id
     
-    async def execute_async_assessment_task(self, task_id: str, db: Optional[AsyncSession] = None): # Added db parameter
+    async def execute_async_assessment_task(self, task_id: str, db: AsyncSession):
         """执行异步评估任务"""
-        # This method will need a DB session if it's to use CRUD operations.
-        # Assuming it will be called by a background task that provides a session.
-        # If db is None, it implies this method might need to create its own session,
-        # or the calling background task wrapper must provide it.
-        # For now, let's assume the caller (background task in router) will provide `db`.
-        if db is None:
-            # This is a fallback, ideally the caller provides the session
-            from db.database import AsyncSessionLocal
-            async with AsyncSessionLocal() as session:
-                return await self._execute_async_assessment_task_impl(task_id, session)
-        else:
-            return await self._execute_async_assessment_task_impl(task_id, db)
+        # The actual execution logic is in _execute_async_assessment_task_impl
+        return await self._execute_async_assessment_task_impl(task_id, db)
 
     async def _execute_async_assessment_task_impl(self, task_id: str, db: AsyncSession):
         try:

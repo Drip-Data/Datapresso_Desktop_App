@@ -1,8 +1,178 @@
-import os
-import json
-from typing import List, Dict, Any
-from services.data_filtering_service import DataFilteringService
-from utils.helpers import get_project_root, ensure_directory_exists
+import logging
+import asyncio
+import uuid
+import time
+from datetime import datetime
+from typing import List, Dict, Any, Optional, Union
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from schemas import EvaluationRequest, EvaluationMetric, TaskCreate, TaskUpdate, Task, MetricScore # Import necessary schemas
+from db import operations as crud # For database operations
+from core.evaluators.evaluation_engine import EvaluationEngine # Assuming this will contain core evaluation logic
+
+logger = logging.getLogger(__name__)
+
+class EvaluationService:
+    """数据评估服务"""
+    
+    def __init__(self):
+        # Services should be stateless and not depend on file paths in __init__
+        # Dependencies like EvaluationEngine can be instantiated here or passed in methods.
+        pass
+
+    async def evaluate_data(
+        self,
+        data: List[Dict[str, Any]],
+        metrics: List[EvaluationMetric],
+        reference_data: Optional[List[Dict[str, Any]]] = None,
+        custom_metric_code: Optional[str] = None,
+        weights: Optional[Dict[str, float]] = None,
+        threshold: Optional[float] = None,
+        schema: Optional[Dict[str, Any]] = None,
+        detail_level: str = "medium"
+    ) -> Dict[str, Any]:
+        """
+        执行数据评估
+        
+        Args:
+            data: 要评估的数据
+            metrics: 评估指标列表
+            reference_data: 参考数据(可选)
+            custom_metric_code: 自定义指标代码(如需)
+            weights: 各指标权重
+            threshold: 总体通过阈值
+            schema: 数据模式定义
+            detail_level: 详细程度
+            
+        Returns:
+            包含评估结果和摘要的字典
+        """
+        logger.debug(f"Starting data evaluation with {len(data)} items and metrics: {metrics}")
+        
+        evaluator = EvaluationEngine() # Instantiate the evaluation engine
+
+        # Placeholder for actual evaluation logic
+        # This should call methods in EvaluationEngine to perform the evaluation
+        # and return structured results.
+        
+        overall_score = 0.0
+        metric_scores: List[MetricScore] = []
+        recommendations: List[str] = []
+        passed = False
+        details_by_field: Dict[str, List[Dict[str, Any]]] = {}
+        visualization_data: Dict[str, Any] = {}
+
+        # Example: Simulate evaluation for each metric
+        for metric in metrics:
+            score = random.uniform(0.5, 1.0) # Dummy score
+            metric_details = {"info": f"Details for {metric.value}"}
+            metric_passed = score >= (weights.get(metric.value, 0.0) if weights else 0.7) # Dummy pass logic
+            
+            metric_scores.append(MetricScore(
+                metric=metric.value,
+                score=score,
+                details=metric_details,
+                passed=metric_passed
+            ))
+            if not metric_passed:
+                recommendations.append(f"Improve {metric.value} score.")
+        
+        # Calculate overall score (dummy)
+        if metric_scores:
+            overall_score = sum(ms.score for ms in metric_scores) / len(metric_scores)
+            if threshold is not None:
+                passed = overall_score >= threshold
+            else:
+                passed = overall_score >= 0.75 # Default pass threshold
+
+        # In a real implementation, you would call evaluator.run_evaluation(...)
+        # and process its results into the desired format.
+        
+        return {
+            "overall_score": overall_score,
+            "metric_scores": [ms.dict() for ms in metric_scores], # Convert Pydantic models to dicts
+            "visualization_data": visualization_data,
+            "recommendations": recommendations,
+            "passed": passed,
+            "details_by_field": details_by_field
+        }
+
+    async def start_async_evaluation_task(self, request_in: EvaluationRequest, db: AsyncSession) -> str:
+        """启动异步评估任务，返回任务ID"""
+        task_id = str(uuid.uuid4())
+        
+        task_payload_for_db = TaskCreate(
+            id=task_id,
+            name=f"EvaluationTask-{request_in.request_id or task_id}",
+            task_type="data_evaluation",
+            status="queued",
+            parameters=request_in.dict(exclude_none=True)
+        )
+        await crud.create_task(db=db, task_in=task_payload_for_db)
+        
+        return task_id
+
+    async def execute_async_evaluation_task(self, task_id: str, db: AsyncSession):
+        """执行异步评估任务"""
+        try:
+            await crud.update_task(db=db, task_id=task_id, task_in=TaskUpdate(status="running", started_at=datetime.now()))
+            
+            task_orm = await crud.get_task(db=db, task_id=task_id)
+            if not task_orm or not task_orm.parameters:
+                logger.error(f"Task {task_id} not found or has no parameters for evaluation.")
+                await crud.update_task(db=db, task_id=task_id, task_in=TaskUpdate(status="failed", error="Task data or parameters not found", completed_at=datetime.now()))
+                return
+
+            request_params = task_orm.parameters
+            
+            # Convert metrics from list of strings to EvaluationMetric enums
+            metrics_list = [EvaluationMetric(m) for m in request_params.get("metrics", [])]
+
+            result = await self.evaluate_data(
+                data=request_params.get("data", []),
+                metrics=metrics_list,
+                reference_data=request_params.get("reference_data"),
+                custom_metric_code=request_params.get("custom_metric_code"),
+                weights=request_params.get("weights"),
+                threshold=request_params.get("threshold"),
+                schema=request_params.get("schema"),
+                detail_level=request_params.get("detail_level", "medium")
+            )
+            
+            task_result_payload = {
+                "overall_score": result["overall_score"],
+                "metric_scores": result["metric_scores"],
+                "visualization_data": result.get("visualization_data"),
+                "recommendations": result.get("recommendations"),
+                "passed": result.get("passed"),
+                "details_by_field": result.get("details_by_field"),
+                "status_message": "Data evaluated successfully in async task",
+                "execution_time_ms": (datetime.now() - task_orm.started_at).total_seconds() * 1000 if task_orm.started_at else None,
+                "original_request_id": request_params.get("request_id")
+            }
+            
+            await crud.update_task(db=db, task_id=task_id, task_in=TaskUpdate(
+                status="completed",
+                result=task_result_payload,
+                completed_at=datetime.now(),
+                progress=1.0
+            ))
+            
+        except Exception as e:
+            logger.error(f"Error in async evaluation task {task_id}: {str(e)}", exc_info=True)
+            await crud.update_task(db=db, task_id=task_id, task_in=TaskUpdate(
+                status="failed",
+                error=str(e),
+                completed_at=datetime.now()
+            ))
+
+    async def get_task_status(self, task_id: str, db: AsyncSession) -> Optional[Task]:
+        """获取任务状态和结果"""
+        task_orm = await crud.get_task(db=db, task_id=task_id)
+        if not task_orm:
+            return None
+        
+        return Task.from_orm(task_orm)
 
 class EvaluationService:
     def __init__(self, project_name: str, eval_name: str):

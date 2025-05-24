@@ -2,8 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_async_db
-from schemas import DataFilteringRequest, Task as TaskSchema # Import Task schema for response model
-from models.response_models import DataFilteringResponse, BaseResponse # These should ideally also move to schemas.py
+from schemas import DataFilteringRequest, Task as TaskSchema, DataFilteringResponse, BaseResponse # Consolidated imports
 from services.data_filtering_service import DataFilteringService
 import logging
 import time
@@ -11,6 +10,24 @@ from typing import Any, Union
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.get("/test")
+async def test_data_filtering():
+    """数据过滤模块联调测试端点"""
+    try:
+        return {
+            "status": "success",
+            "message": "Data filtering module is working",
+            "module": "data_filtering",
+            "endpoints": [
+                "/filter - POST: 同步数据过滤",
+                "/async_filter - POST: 异步数据过滤",
+                "/task/{task_id} - GET: 查询任务结果"
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Error in data filtering test: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 def get_data_filtering_service():
     """依赖注入：获取数据过滤服务实例"""
@@ -52,7 +69,7 @@ async def filter_data(
         )
         
         execution_time = (time.time() - start_time) * 1000
-        logger.info(f"Filter completed (id: {request.request_id}), returning {len(result['filtered_data'])} items")
+        logger.info(f"Filter completed (id: {request.request_id}), returning {len(result['filtered_data_paginated'])} items")
         
         # 构建响应
         return DataFilteringResponse(

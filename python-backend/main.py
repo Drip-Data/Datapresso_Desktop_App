@@ -1,130 +1,180 @@
-from fastapi import FastAPI, Request, Depends
+"""
+Datapresso Backend API
+主要提供数据处理、LLM集成、质量评估等服务
+"""
+
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
 import uvicorn
 import logging
 import time
-import os
-from typing import Callable
-from dotenv import load_dotenv
-from contextlib import asynccontextmanager # Added for lifespan
+from contextlib import asynccontextmanager
 
-# 加载环境变量
-load_dotenv()
-
-# 导入路由模块
+# 路由导入
 from routers import (
-    data_filtering, data_generation, evaluation, 
-    llamafactory, llm_api, quality_assessment
+    llm_api,
+    seed_data,
+    data_filtering,
+    data_generation,
+    evaluation,
+    quality_assessment,
+    llamafactory
 )
+
+# 数据库和配置
+from config import get_settings
 from utils.logger import setup_logger
-from utils.error_handler import handle_exception
-from config import Settings, get_settings
+from utils.error_handler import global_exception_handler
+
+# 数据库和配置 (放在路由导入之后，以避免潜在的循环依赖)
+from db.database import engine, get_db
+from db.models import Base
 
 # 设置日志
-logger = setup_logger()
+setup_logger()
+logger = logging.getLogger(__name__)
 
-# 导入数据库初始化函数
-from db.database import create_db_and_tables, get_async_db_contextmanager
+# 获取配置
+settings = get_settings()
 
-# 导入 LlamaFactoryService 以加载现有任务
-from core.llamafactory.llamafactory_service import LlamaFactoryService
-from routers.llamafactory import get_llamafactory_service # To get the service instance
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 在应用启动时执行
-    logger.info("Application startup: Initializing database...")
-    await create_db_and_tables()
-    logger.info("Database initialization complete.")
-
-    # 加载 LlamaFactory 现有任务
-    logger.info("Application startup: Loading existing LlamaFactory tasks...")
+    """应用生命周期管理"""
+    logger.info("Starting Datapresso Backend...")
+    
+    # 启动时创建数据库表
     try:
-        # Need a DB session here. We can use a context manager for the session.
-        async with get_async_db_contextmanager() as db:
-            # Get the LlamaFactoryService instance.
-            # Note: get_llamafactory_service creates a global instance if None.
-            # This is okay for lifespan, as it runs once.
-            lf_service = get_llamafactory_service() # This will initialize if not already
-            if hasattr(lf_service, 'load_existing_tasks_async'):
-                 await lf_service.load_existing_tasks_async(db)
-            logger.info("LlamaFactory existing tasks loading process initiated.")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created successfully")
     except Exception as e:
-        logger.error(f"Failed to load existing LlamaFactory tasks during startup: {e}", exc_info=True)
+        logger.error(f"Failed to create database tables: {e}")
+        raise
     
     yield
-    # 在应用关闭时执行 (如果需要清理逻辑)
-    logger.info("Application shutdown.")
+    
+    # 关闭时清理资源
+    logger.info("Shutting down Datapresso Backend...")
+    await engine.dispose()
+
 
 # 创建FastAPI应用
 app = FastAPI(
     title="Datapresso API",
-    description="Datapresso 桌面应用后端 API",
+    description="AI数据处理和质量评估平台后端API",
     version="1.0.0",
-    docs_url="/docs" if os.getenv("FASTAPI_ENV") == "development" else None,
-    lifespan=lifespan # Added lifespan manager
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan
 )
 
-# 添加CORS中间件
+# CORS中间件配置
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"],  # 允许所有来源以支持 Electron 文件协议和其他环境
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 添加请求处理中间件
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next: Callable):
-    # 记录请求开始时间
-    start_time = time.time()
-    
-    # 处理请求
-    response = await call_next(request)
-    
-    # 计算处理时间
-    process_time = (time.time() - start_time) * 1000
-    response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
-    
-    # 记录请求日志
-    logger.info(
-        f"Request: {request.method} {request.url.path} - "
-        f"Status: {response.status_code} - "
-        f"Time: {process_time:.2f}ms"
-    )
-    
-    return response
-
-# 注册路由
-app.include_router(data_filtering.router, prefix="/data_filtering", tags=["Data Filtering"])
-app.include_router(data_generation.router, prefix="/data_generation", tags=["Data Generation"])
-app.include_router(evaluation.router, prefix="/evaluation", tags=["Evaluation"])
-app.include_router(llamafactory.router, prefix="/llamafactory", tags=["LlamaFactory"])
-app.include_router(llm_api.router, prefix="/llm_api", tags=["LLM API"])
-app.include_router(quality_assessment.router, prefix="/quality_assessment", tags=["Quality Assessment"])
-
 # 全局异常处理
-@app.exception_handler(Exception)
-async def global_exception_handler(request: Request, exc: Exception):
-    return handle_exception(request, exc)
+app.add_exception_handler(Exception, global_exception_handler)
 
-@app.get("/")
-async def root(settings: Settings = Depends(get_settings)):
-    """API根路径，返回API信息"""
-    return {
-        "message": "Welcome to Datapresso API",
-        "version": "1.0.0",
-        "environment": settings.environment,
-        "docs_url": "/docs" if settings.environment == "development" else None
-    }
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    """处理请求验证错误"""
+    logger.warning(f"Validation error on {request.url}: {exc.errors()}")
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        headers={"Access-Control-Allow-Origin": "*"},
+        content={
+            "status": "error",
+            "message": "请求参数验证失败",
+            "details": exc.errors()
+        }
+    )
+
+
+# 健康检查端点
 @app.get("/health")
 async def health_check():
     """健康检查端点"""
-    return {"status": "healthy", "timestamp": time.time()}
+    try:
+        # 检查数据库连接
+        async with engine.begin() as conn:
+            await conn.execute("SELECT 1")
+        
+        return {
+            "status": "healthy",
+            "message": "Datapresso Backend is running",
+            "version": "1.0.0",
+            "components": {
+                "database": "healthy",
+                "api": "healthy"
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            headers={"Access-Control-Allow-Origin": "*"}, # Add CORS header here too
+            content={
+                "status": "unhealthy",
+                "message": "Service unavailable",
+                "error": str(e)
+            }
+        )
+
+
+@app.get("/")
+async def root():
+    """根路径"""
+    return {
+        "message": "Welcome to Datapresso API",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
+
+# 注册路由
+app.include_router(llm_api.router, prefix="/llm_api", tags=["LLM API"])
+app.include_router(seed_data.router, prefix="/seed_data", tags=["Seed Data"])
+app.include_router(data_filtering.router, prefix="/data_filtering", tags=["Data Filtering"])
+app.include_router(data_generation.router, prefix="/data_generation", tags=["Data Generation"])
+app.include_router(evaluation.router, prefix="/evaluation", tags=["Evaluation"])
+app.include_router(quality_assessment.router, prefix="/quality_assessment", tags=["Quality Assessment"])
+app.include_router(llamafactory.router, prefix="/llamafactory", tags=["LlamaFactory"])
+
+# 添加中间件记录请求
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """记录所有HTTP请求"""
+    start_time = time.time()
+    
+    # 记录请求
+    logger.info(f"Request: {request.method} {request.url}")
+    
+    response = await call_next(request)
+    
+    # 记录响应时间
+    process_time = time.time() - start_time
+    logger.info(f"Response: {response.status_code} - {process_time:.3f}s")
+    
+    return response
+
 
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8000))
-    uvicorn.run("main:app", host="127.0.0.1", port=port, reload=True)
+    import time
+    
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=8000,
+        reload=True,
+        log_level="debug"  # Changed log_level to debug for more verbose output
+    )

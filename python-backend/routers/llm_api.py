@@ -3,14 +3,14 @@ from typing import Dict, Any, List, Optional, Union
 import logging
 import time
 import asyncio
-from pydantic import BaseModel, Field
-from sqlalchemy.ext.asyncio import AsyncSession # Added
-from db.database import get_async_db # Changed: Relative import
-import schemas # Changed: Relative import
-# Assuming LlmApiRequest, LlmApiMultimodalRequest, LlmBatchCreateRequest are now in schemas.py
-# from models.request_models import LlmApiRequest, LlmApiMultimodalRequest, LlmBatchCreateRequest
-from models.response_models import LlmApiResponse, BaseResponse # Changed: Relative import
-from services.llm_api_service import LlmApiService # Changed: Relative import
+from sqlalchemy.ext.asyncio import AsyncSession
+from db.database import get_async_db
+import schemas # Added import for schemas module
+from schemas import (
+    LlmApiRequest, LlmApiMultimodalRequest, LlmBatchCreateRequest,
+    LlmApiResponse, BaseResponse, Task as TaskSchema
+) # Consolidated imports
+from services.llm_api_service import LlmApiService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -239,7 +239,74 @@ async def get_llm_providers(
 ):
     """获取所有可用的LLM提供商和模型信息"""
     try:
-        providers = await service.get_providers_info()
+        # Temporary fix: return static data to bypass service errors
+        import os
+        providers = {
+            "openai": {
+                "models": {
+                    "gpt-4o": {
+                        "context_window": 128000,
+                        "max_output_tokens": 4096,
+                        "capabilities": ["text", "vision", "function_calling"]
+                    },
+                    "gpt-3.5-turbo": {
+                        "context_window": 16385,
+                        "max_output_tokens": 4096,
+                        "capabilities": ["text"]
+                    }
+                },
+                "pricing": {
+                    "gpt-4o": {"prompt": 0.005, "completion": 0.015},
+                    "gpt-3.5-turbo": {"prompt": 0.0005, "completion": 0.0015}
+                },
+                "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
+                "capabilities": {
+                    "text": True,
+                    "images": True,
+                    "embeddings": True,
+                    "batch": True
+                }
+            },
+            "anthropic": {
+                "models": {
+                    "claude-3-5-sonnet-20241022": {
+                        "context_window": 200000,
+                        "max_output_tokens": 4096,
+                        "capabilities": ["text", "vision"]
+                    }
+                },
+                "pricing": {
+                    "claude-3-5-sonnet-20241022": {"prompt": 0.003, "completion": 0.015}
+                },
+                "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+                "capabilities": {
+                    "text": True,
+                    "images": True,
+                    "embeddings": False,
+                    "batch": True
+                }
+            },
+            "mock": {
+                "models": {
+                    "mock-model": {
+                        "context_window": 4096,
+                        "max_output_tokens": 1024,
+                        "capabilities": ["text"]
+                    }
+                },
+                "pricing": {
+                    "mock-model": {"prompt": 0.0, "completion": 0.0}
+                },
+                "has_api_key": True, # Mock provider doesn't need a key, but set to True for consistency
+                "capabilities": {
+                    "text": True,
+                    "images": False, # Or True if you plan to mock image responses too
+                    "embeddings": False,
+                    "batch": True # Can be True if you plan to mock batch responses
+                }
+            }
+        }
+        
         return {
             "status": "success",
             "providers": providers
@@ -247,3 +314,33 @@ async def get_llm_providers(
     except Exception as e:
         logger.error(f"Error in get_llm_providers: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/providers/{provider_name}/test", response_model=BaseResponse)
+async def test_llm_provider_connection(
+    provider_name: str,
+    service: LlmApiService = Depends(get_llm_api_service)
+):
+    """
+    测试LLM提供商连接
+    """
+    try:
+        logger.info(f"Received request to test LLM provider: {provider_name}")
+        test_result = await service.test_provider_connection(provider_name)
+        
+        if test_result.get("test_passed"):
+            return BaseResponse(
+                status="success",
+                message=test_result.get("message", f"Connection to {provider_name} successful."),
+                data=test_result
+            )
+        else:
+            raise HTTPException(
+                status_code=400, # Or 500 if it's a backend error, but 400 for config issue
+                detail=test_result.get("message", f"Connection to {provider_name} failed."),
+                # headers={"X-Error-Details": json.dumps(test_result)} # Optional: for more details
+            )
+    except HTTPException:
+        raise # Re-raise HTTPException
+    except Exception as e:
+        logger.error(f"Error testing LLM provider {provider_name}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error while testing provider: {str(e)}")

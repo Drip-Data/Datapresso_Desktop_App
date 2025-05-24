@@ -11,10 +11,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogT
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { KeyRound, PlusCircle, Edit, Trash2, Eye, EyeOff } from 'lucide-react';
 import { toast } from "sonner";
+import { testLlmProviderConnection, updateLlmProviderConfig } from '@/utils/apiAdapter'; // Import the new API function
+import { UpdateAppConfigRequest } from '@/types/api'; // Import the type
 
 interface ApiKey {
   id: string;
-  provider: 'openai' | 'anthropic' | 'deepseek' | 'other';
+  provider: string; // Changed to string to allow dynamic provider IDs from backend
   name: string;
   key: string;
   addedDate: string;
@@ -27,7 +29,7 @@ const ApiKeysPage: React.FC = () => {
   const [managedApiKeys, setManagedApiKeys] = useState<ApiKey[]>([]);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ApiKey | null>(null);
-  const [keyFormData, setKeyFormData] = useState<{ provider: ApiKey['provider']; name: string; key: string }>({
+  const [keyFormData, setKeyFormData] = useState<{ provider: string; name: string; key: string }>({ // Changed provider type to string
     provider: 'openai',
     name: '',
     key: '',
@@ -50,15 +52,13 @@ const ApiKeysPage: React.FC = () => {
     if (llmConfigLoading || !providersConfig) return; // Wait for providersConfig to load
 
     const loadedKeys = Object.keys(providersConfig).map(providerId => {
-      const key = getApiKey(providerId as ApiKey['provider']); // Cast providerId
+      const key = getApiKey(providerId); // No longer casting, providerId is string
       // Corrected: BackendProviderInfo (providersConfig[providerId]) doesn't have a 'name' property directly.
       const displayName = PROVIDER_UI_SUPPLEMENTS[providerId]?.name || providerId;
       const name = localStorage.getItem(`datapresso_${providerId}_api_name`) || `默认 ${displayName} Key`;
       const addedDate = localStorage.getItem(`datapresso_${providerId}_api_added_date`) || new Date().toISOString().split('T')[0];
       if (key) {
-        // Ensure providerId is one of the allowed types for ApiKey['provider']
-        // This might need a type guard or more careful mapping if providerId from backend can be arbitrary
-        return { id: providerId, provider: providerId as ApiKey['provider'], name, key, addedDate };
+        return { id: providerId, provider: providerId, name, key, addedDate };
       }
       return null;
     }).filter(Boolean) as ApiKey[];
@@ -72,10 +72,10 @@ const ApiKeysPage: React.FC = () => {
   };
 
   const handleSelectChange = (name: string, value: string) => {
-    setKeyFormData(prev => ({ ...prev, [name]: value as ApiKey['provider'] }));
+    setKeyFormData(prev => ({ ...prev, [name]: value })); // No longer casting, value is string
   };
 
-  const validateApiKeyFormat = (providerId: ApiKey['provider'], key: string): boolean => {
+  const validateApiKeyFormat = (providerId: string, key: string): boolean => { // Changed providerId type to string
     const uiSupplement = PROVIDER_UI_SUPPLEMENTS[providerId];
     if (uiSupplement?.apiKeyFormatRegex && !uiSupplement.apiKeyFormatRegex.test(key)) {
       toast.error(`${uiSupplement.name || providerId} API Key 格式似乎不正确。`);
@@ -93,7 +93,7 @@ const ApiKeysPage: React.FC = () => {
     return true;
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => { // Made async
     if (!keyFormData.name || !keyFormData.key || !keyFormData.provider) {
       toast.error("请填写所有必填项！");
       return;
@@ -103,35 +103,47 @@ const ApiKeysPage: React.FC = () => {
       return;
     }
 
-    saveApiKey(keyFormData.provider, keyFormData.key); // Use context's saveApiKey
-    // Store name and date for UI display, this is a simple approach, prefix with datapresso_
-    localStorage.setItem(`datapresso_${keyFormData.provider}_api_name`, keyFormData.name);
-    const addedDate = editingKey?.addedDate || new Date().toISOString().split('T')[0];
-    localStorage.setItem(`datapresso_${keyFormData.provider}_api_added_date`, addedDate);
+    try {
+      // Attempt to save to backend first
+      const configData: UpdateAppConfigRequest = { api_key: keyFormData.key }; // Use imported type, backend expects snake_case
+      const result = await updateLlmProviderConfig(keyFormData.provider, configData);
 
+      if (result.status === 'success') {
+        saveApiKey(keyFormData.provider, keyFormData.key); // Use context's saveApiKey for local storage
+        // Store name and date for UI display, this is a simple approach, prefix with datapresso_
+        localStorage.setItem(`datapresso_${keyFormData.provider}_api_name`, keyFormData.name);
+        const addedDate = editingKey?.addedDate || new Date().toISOString().split('T')[0];
+        localStorage.setItem(`datapresso_${keyFormData.provider}_api_added_date`, addedDate);
 
-    if (editingKey) {
-      setManagedApiKeys(managedApiKeys.map(k => k.id === editingKey.id ? { ...editingKey, ...keyFormData, provider: keyFormData.provider, addedDate } : k));
-      toast.success(`API密钥 "${keyFormData.name}" 已更新。`);
-    } else {
-      const newKey: ApiKey = {
-        id: keyFormData.provider, // Using provider as ID for simplicity, assuming one key per provider for now
-        ...keyFormData,
-        addedDate,
-      };
-      // Avoid duplicates if adding again for the same provider
-      setManagedApiKeys(prevKeys => {
-        const existing = prevKeys.find(k => k.provider === newKey.provider);
-        if (existing) {
-          return prevKeys.map(k => k.provider === newKey.provider ? newKey : k);
+        if (editingKey) {
+          setManagedApiKeys(managedApiKeys.map(k => k.id === editingKey.id ? { ...editingKey, ...keyFormData, provider: keyFormData.provider, addedDate } : k));
+          toast.success(`API密钥 "${keyFormData.name}" 已更新并保存到后端。`);
+        } else {
+          const newKey: ApiKey = {
+            id: keyFormData.provider, // Using provider as ID for simplicity, assuming one key per provider for now
+            ...keyFormData,
+            addedDate,
+          };
+          // Avoid duplicates if adding again for the same provider
+          setManagedApiKeys(prevKeys => {
+            const existing = prevKeys.find(k => k.provider === newKey.provider);
+            if (existing) {
+              return prevKeys.map(k => k.provider === newKey.provider ? newKey : k);
+            }
+            return [...prevKeys, newKey];
+          });
+          toast.success(`API密钥 "${keyFormData.name}" 已添加并保存到后端。`);
         }
-        return [...prevKeys, newKey];
-      });
-      toast.success(`API密钥 "${keyFormData.name}" 已添加。`);
+        setIsFormOpen(false);
+        setEditingKey(null);
+        setKeyFormData({ provider: 'openai', name: '', key: '' });
+      } else {
+        toast.error(`保存API密钥到后端失败: ${result.message || '未知错误'}`);
+      }
+    } catch (error: any) {
+      console.error("Error saving API key to backend:", error);
+      toast.error(`保存API密钥失败: ${error.message || '网络或服务器错误'}`);
     }
-    setIsFormOpen(false);
-    setEditingKey(null);
-    setKeyFormData({ provider: 'openai', name: '', key: '' });
   };
 
   const handleEdit = (key: ApiKey) => {
@@ -139,7 +151,7 @@ const ApiKeysPage: React.FC = () => {
     setKeyFormData({ provider: key.provider, name: key.name, key: key.key });
     setIsFormOpen(true);
   };
-const handleDelete = (keyId: string, provider: ApiKey['provider']) => {
+const handleDelete = (keyId: string, provider: string) => { // Changed provider type to string
   // Use context's removeApiKey
   removeContextApiKey(provider);
   // Also remove UI-specific localStorage items
@@ -154,24 +166,30 @@ const handleDelete = (keyId: string, provider: ApiKey['provider']) => {
     setShowKeyId(prev => prev === keyId ? null : keyId);
   };
 
-  const getProviderDisplayName = (providerId: ApiKey['provider']): string => {
+  const getProviderDisplayName = (providerId: string): string => { // Changed providerId type to string
     // Corrected: BackendProviderInfo (providersConfig?.[providerId]) doesn't have a 'name' property directly.
     return PROVIDER_UI_SUPPLEMENTS[providerId]?.name || providerId;
   };
 
-  const testApiKeyConnection = async (provider: ApiKey['provider'], key: string) => {
+  const testApiKeyConnection = async (provider: string, key: string) => { // Changed provider type to string
     const displayName = getProviderDisplayName(provider);
     toast.info(`正在测试 ${displayName} 连接...`);
     
-    // Placeholder for actual API call to backend which then tests the key
-    // For now, using client-side validation as a mock
-    setTimeout(() => {
-        if (validateApiKeyFormat(provider, key)) { // Use the validation logic
-             toast.success(`${displayName} 连接测试成功 (模拟)。`);
-        } else {
-            toast.error(`${displayName} 连接测试失败 (模拟) - Key可能无效或格式错误。`);
-        }
-    }, 1500);
+    try {
+      // Call the actual backend API to test connection
+      const result = await testLlmProviderConnection(provider);
+      
+      if (result.status === 'success') {
+        toast.success(`${displayName} 连接测试成功！`);
+      } else {
+        // Backend returns status 'error' or message indicates failure
+        toast.error(`${displayName} 连接测试失败: ${result.message || '未知错误'}`);
+      }
+    } catch (error: any) {
+      // Handle network errors or other exceptions from the API call
+      console.error(`Error testing ${displayName} connection:`, error);
+      toast.error(`${displayName} 连接测试失败: ${error.message || '网络或服务器错误'}`);
+    }
   };
 
   // providerDisplayNames constant is removed, use getProviderDisplayName or availableProviders
@@ -259,7 +277,7 @@ const handleDelete = (keyId: string, provider: ApiKey['provider']) => {
           </TableBody>
         </Table>
       </div>
-
+ 
       <Dialog open={isFormOpen} onOpenChange={(isOpen) => {
         setIsFormOpen(isOpen);
         if (!isOpen) setEditingKey(null);
@@ -302,5 +320,5 @@ const handleDelete = (keyId: string, provider: ApiKey['provider']) => {
     </div>
   );
 };
-
+ 
 export default ApiKeysPage;

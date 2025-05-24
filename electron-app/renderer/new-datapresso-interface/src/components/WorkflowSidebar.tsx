@@ -1,6 +1,6 @@
 import React, { useState } from 'react'; // Added useState
 import { Link, useLocation } from 'react-router-dom';
-import { Zap, Database, Filter, Brain, Settings, KeyRound, HelpCircle, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react'; // Added Chevron icons & MessageSquare
+import { Zap, Database, Filter, Brain, Settings, KeyRound, HelpCircle, ChevronLeft, ChevronRight, MessageSquare, TestTube, PlayCircle } from 'lucide-react'; // Added TestTube and PlayCircle icons
 import { Button } from '@/components/ui/button'; // Added Button import
 
 // Original SVG Logo component, adjusted size for collapsed state via className
@@ -104,6 +104,16 @@ const WorkflowSidebar: React.FC = () => {
         <NavItem icon={Filter} label="高级筛选" to="/data-quality" currentPath={currentPath} isCollapsed={isCollapsed} />
         <NavItem icon={Brain} label="模型训练" to="/training" currentPath={currentPath} isCollapsed={isCollapsed} />
         <NavItem icon={MessageSquare} label="LLM 实验场" to="/llm-playground" currentPath={currentPath} isCollapsed={isCollapsed} />
+        
+        <div
+          className={`uppercase text-xs font-semibold text-gray-500 mt-6 mb-2 px-1 tracking-wider transition-all duration-200 ease-in-out origin-left ${
+            isCollapsed ? 'opacity-0 scale-90 pointer-events-none h-0 py-0 my-0 leading-none' : 'opacity-100 scale-100 delay-100 mt-6' // ensure mt-6 is applied when expanded
+          }`}
+        >
+          测试工具
+        </div>
+        <NavItem icon={TestTube} label="模块测试" to="/module-test" currentPath={currentPath} isCollapsed={isCollapsed} />
+        <NavItem icon={PlayCircle} label="端到端测试" to="/end-to-end-test" currentPath={currentPath} isCollapsed={isCollapsed} />
         
         <div
           className={`uppercase text-xs font-semibold text-gray-500 mt-6 mb-2 px-1 tracking-wider transition-all duration-200 ease-in-out origin-left ${

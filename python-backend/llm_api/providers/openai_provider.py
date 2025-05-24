@@ -138,5 +138,28 @@ class OpenAIProvider(BaseLLMProvider):
         
         return OPENAI_MODELS[self.model_name]
 
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """
+        列出OpenAI提供商支持的所有模型及其详细信息。
+        """
+        try:
+            models_response = await self.client.models.list()
+            models_list = []
+            for model_obj in models_response.data:
+                model_info = OPENAI_MODELS.get(model_obj.id, {})
+                models_list.append({
+                    "id": model_obj.id,
+                    "object": model_obj.object,
+                    "created": model_obj.created,
+                    "owned_by": model_obj.owned_by,
+                    "capabilities": model_info.get("capabilities", ["unknown"]),
+                    "context_window": model_info.get("context_window"),
+                    "max_output_tokens": model_info.get("max_output_tokens")
+                })
+            return models_list
+        except Exception as e:
+            print(f"Error listing OpenAI models: {e}")
+            raise
+
 # 注册提供商
 LLMProviderFactory.register_provider("openai", OpenAIProvider)

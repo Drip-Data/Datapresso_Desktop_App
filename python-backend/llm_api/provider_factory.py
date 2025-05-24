@@ -1,4 +1,4 @@
-from typing import Dict, Any, Optional, Type, Union
+from typing import Dict, Any, Optional, Type, Union, List # Added List
 import os
 from abc import ABC, abstractmethod
 
@@ -32,6 +32,11 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def calculate_cost(self, prompt_tokens: int, completion_tokens: int) -> float:
         """计算API调用成本"""
+        pass
+
+    @abstractmethod
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """列出提供商支持的所有模型及其详细信息"""
         pass
 
     @property

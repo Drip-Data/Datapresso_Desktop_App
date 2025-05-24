@@ -1,9 +1,8 @@
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession # Added for db session
 from db.database import get_async_db # Added for db session
-from schemas import EvaluationRequest, Task as TaskSchema # Changed import for EvaluationRequest, added TaskSchema
-from models.response_models import EvaluationResponse, BaseResponse # Changed to direct import, assuming these are still in models.response_models
-from services.evaluation_service import EvaluationService # Changed to direct import
+from schemas import EvaluationRequest, EvaluationResponse, BaseResponse, Task as TaskSchema # Consolidated imports
+from services.evaluation_service import EvaluationService
 import logging
 import time
 from typing import Any, Union # Added Union

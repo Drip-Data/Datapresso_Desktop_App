@@ -21,6 +21,21 @@ function error(message) {
   console.error(message);
 }
 
+// 启动Python后端
+log('启动Python FastAPI后端服务器...');
+const pythonDir = path.join(rootDir, 'python-backend');
+const pythonExecutable = path.join('D:\\Software\\Anaconda\\envs\\datapresso_env', 'python.exe');
+const pythonProcess = spawn(pythonExecutable, ['-m', 'uvicorn', 'main:app', '--reload', '--host', '127.0.0.1', '--port', '8000'], {
+  cwd: pythonDir,
+  shell: true,
+  stdio: 'inherit'
+});
+
+pythonProcess.on('error', (err) => {
+  error(`启动Python后端服务器失败: ${err.message}`);
+  process.exit(1);
+});
+
 // 启动React前端
 log('启动React开发服务器...');
 const reactDir = path.join(rootDir, 'electron-app', 'renderer', 'new-datapresso-interface');
@@ -35,8 +50,8 @@ reactProcess.on('error', (err) => {
   process.exit(1);
 });
 
-// 等待React开发服务器启动
-log('等待React开发服务器启动...');
+// 等待后端和前端服务器启动
+log('等待Python后端和React开发服务器启动...');
 
 // 检查React开发服务器是否启动的函数
 function checkServerStarted() {
@@ -69,7 +84,8 @@ async function startElectron() {
     
     electronProcess.on('close', (code) => {
       log(`Electron应用已退出，代码: ${code}`);
-      // 退出React开发服务器
+      // 退出Python后端和React开发服务器
+      pythonProcess.kill();
       reactProcess.kill();
       process.exit(code);
     });
@@ -85,7 +101,8 @@ startElectron();
 // 处理退出信号
 process.on('SIGINT', () => {
   log('收到退出信号，正在关闭所有进程...');
-  electronProcess.kill();
-  reactProcess.kill();
+  if (typeof electronProcess !== 'undefined') electronProcess.kill();
+  if (typeof pythonProcess !== 'undefined') pythonProcess.kill();
+  if (typeof reactProcess !== 'undefined') reactProcess.kill();
   process.exit();
 });
