@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional, Union
 import logging
 import time
 import asyncio
+import os
 from sqlalchemy.ext.asyncio import AsyncSession
 from db.database import get_async_db
 import schemas # Added import for schemas module
@@ -240,7 +241,6 @@ async def get_llm_providers(
     """获取所有可用的LLM提供商和模型信息"""
     try:
         # Temporary fix: return static data to bypass service errors
-        import os
         providers = {
             "openai": {
                 "models": {

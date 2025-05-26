@@ -23,7 +23,8 @@ async function startBackendService() {
     if (isDev) {
       // 开发环境路径
       scriptPath = path.join(
-        path.dirname(path.dirname(__dirname)), // This should point to Datapresso_Desktop_App
+        path.dirname(path.dirname(__dirname)),
+        'Datapresso_Desktop_App', // 添加这一层目录
         'python-backend',
         'main.py'
       );
