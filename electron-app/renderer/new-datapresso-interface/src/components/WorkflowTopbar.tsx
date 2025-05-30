@@ -3,10 +3,7 @@ import { HelpCircle, UserCircle, ChevronDown, FolderPlus, Settings2 } from 'luci
 import { useNavigate } from 'react-router-dom';
 import { useProject, RecentProjectRecord } from '@/contexts/ProjectContext';
 import { useUser } from '@/contexts/UserContext'; // Import useUser
-import { useSettings, ExecutionMode } from '@/contexts/SettingsContext'; // Import useSettings
 import { Button } from '@/components/ui/button';
-import { Switch } from "@/components/ui/switch"; // Import Switch
-import { Label } from "@/components/ui/label"; // Import Label
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,9 +40,7 @@ const WorkflowTopbar: React.FC<WorkflowTopbarProps> = ({ pageTitle }) => {
     openRecentProject,
     selectProjectDirectory,
     isLoadingProject
-  } = useProject();
-  const { user, isLoadingUser } = useUser(); // Get user from UserContext
-  const { executionMode, setExecutionMode } = useSettings(); // Get settings context
+  } = useProject();  const { user, isLoadingUser } = useUser(); // Get user from UserContext
   const navigate = useNavigate();
 
   // const user = { // Replaced by UserContext
@@ -132,24 +127,8 @@ const WorkflowTopbar: React.FC<WorkflowTopbarProps> = ({ pageTitle }) => {
               </span>
             )} */}
           </div>
-        </div>
-
-        {/* Right side: Controls & User Profile */}
-        <div className="flex items-center space-x-4"> {/* Increased space-x for new element */}
-          {/* Execution Mode Switch */}
-          <div className="flex items-center space-x-2">
-            <Label htmlFor="execution-mode-switch" className="text-xs text-gray-600">
-              {executionMode === 'demo' ? '演示模式' : '生产模式'}
-            </Label>
-            <Switch
-              id="execution-mode-switch"
-              checked={executionMode === 'production'}
-              onCheckedChange={(isProduction) => {
-                setExecutionMode(isProduction ? 'production' : 'demo');
-              }}
-              aria-label="切换执行模式"
-            />
-          </div>
+        </div>        {/* Right side: Controls & User Profile */}
+        <div className="flex items-center space-x-4">
 
           <button
             title="帮助"

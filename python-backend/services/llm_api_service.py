@@ -11,16 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession # Added
 import schemas # Changed: Relative import
 from db import operations as crud # Changed: Relative import
 
-# Ensure all providers are registered by importing the providers package
-import llm_api.providers
+# Import provider factory but not all providers to avoid blocking imports
 from llm_api.provider_factory import LLMProviderFactory # Changed: Relative import
 from llm_api.batch_processor import BatchProcessor # Changed: Relative import
 from llm_api.batch_processors.anthropic_batch import AnthropicBatchProcessor # Changed: Relative import
 from llm_api.batch_processors.openai_batch import OpenAIBatchProcessor # Changed: Relative import
-from llm_api.constants import ( # Changed: Relative import
-    OPENAI_MODELS, ANTHROPIC_MODELS, GEMINI_MODELS, DEEPSEEK_MODELS,
-    OPENAI_PRICING, ANTHROPIC_PRICING, GEMINI_PRICING, DEEPSEEK_PRICING
-)
 # from db.operations import save_task, update_task, get_task # Replaced by crud
 from config import get_settings # Changed: Relative import
 
@@ -345,8 +340,7 @@ class LlmApiService:
                     # This requires modifying schemas.py. For now, I will skip adding it directly to the schema object.
                     # The caller can inspect task_schema.result["result_file"] and read samples if needed.
                     # For this diff, I will keep the sample reading logic but not modify the returned task_schema object directly.
-                    # The `task_info` in the original code was a dict, so adding keys was easy.
-                    # The `task_schema.result` (which is a dict) can hold this.
+                    # The `task_info` in the original code was a dict, so adding keys was easy.                    # The `task_schema.result` (which is a dict) can hold this.
                     if task_schema.result: # Ensure result dict exists
                         task_schema.result["sample_results"] = sample_results
             except Exception as e:
@@ -354,7 +348,7 @@ class LlmApiService:
                 if task_schema.result:
                     task_schema.result["sample_results_error"] = str(e)
         
-        return task_schema
+                return task_schema
     
     async def get_providers_info(self) -> Dict[str, Any]:
         """
@@ -366,10 +360,31 @@ class LlmApiService:
         try:
             logger.info("Getting providers info...")
             
+            # 使用静态数据避免依赖导入问题
             result = {
                 "openai": {
-                    "models": OPENAI_MODELS,
-                    "pricing": OPENAI_PRICING,
+                    "models": {
+                        "gpt-4o": {
+                            "context_window": 128000,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text", "vision", "function_calling"]
+                        },
+                        "gpt-4o-mini": {
+                            "context_window": 128000,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text", "vision", "function_calling"]
+                        },
+                        "gpt-3.5-turbo": {
+                            "context_window": 16385,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text"]
+                        }
+                    },
+                    "pricing": {
+                        "gpt-4o": {"prompt": 0.005, "completion": 0.015},
+                        "gpt-4o-mini": {"prompt": 0.0015, "completion": 0.0060},
+                        "gpt-3.5-turbo": {"prompt": 0.0005, "completion": 0.0015}
+                    },
                     "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
                     "capabilities": {
                         "text": True,
@@ -379,8 +394,22 @@ class LlmApiService:
                     }
                 },
                 "anthropic": {
-                    "models": ANTHROPIC_MODELS,
-                    "pricing": ANTHROPIC_PRICING,
+                    "models": {
+                        "claude-3-5-sonnet-20241022": {
+                            "context_window": 200000,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text", "vision"]
+                        },
+                        "claude-3-5-haiku-20241022": {
+                            "context_window": 200000,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text", "vision"]
+                        }
+                    },
+                    "pricing": {
+                        "claude-3-5-sonnet-20241022": {"prompt": 0.003, "completion": 0.015},
+                        "claude-3-5-haiku-20241022": {"prompt": 0.00025, "completion": 0.00125}
+                    },
                     "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
                     "capabilities": {
                         "text": True,
@@ -390,8 +419,22 @@ class LlmApiService:
                     }
                 },
                 "gemini": {
-                    "models": GEMINI_MODELS,
-                    "pricing": GEMINI_PRICING,
+                    "models": {
+                        "gemini-1.5-pro": {
+                            "context_window": 1000000,
+                            "max_output_tokens": 8192,
+                            "capabilities": ["text", "vision"]
+                        },
+                        "gemini-1.5-flash": {
+                            "context_window": 1000000,
+                            "max_output_tokens": 8192,
+                            "capabilities": ["text", "vision"]
+                        }
+                    },
+                    "pricing": {
+                        "gemini-1.5-pro": {"prompt": 0.00125, "completion": 0.005},
+                        "gemini-1.5-flash": {"prompt": 0.000075, "completion": 0.0003}
+                    },
                     "has_api_key": bool(os.environ.get("GEMINI_API_KEY")),
                     "capabilities": {
                         "text": True,
@@ -401,8 +444,22 @@ class LlmApiService:
                     }
                 },
                 "deepseek": {
-                    "models": DEEPSEEK_MODELS,
-                    "pricing": DEEPSEEK_PRICING,
+                    "models": {
+                        "deepseek-chat": {
+                            "context_window": 32768,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text"]
+                        },
+                        "deepseek-coder": {
+                            "context_window": 16384,
+                            "max_output_tokens": 4096,
+                            "capabilities": ["text"]
+                        }
+                    },
+                    "pricing": {
+                        "deepseek-chat": {"prompt": 0.00014, "completion": 0.00028},
+                        "deepseek-coder": {"prompt": 0.00014, "completion": 0.00028}
+                    },
                     "has_api_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
                     "capabilities": {
                         "text": True,
@@ -419,20 +476,30 @@ class LlmApiService:
         except Exception as e:
             logger.error(f"Error getting providers info: {str(e)}", exc_info=True)
             raise
-
-    async def test_provider_connection(self, provider_id: str) -> Dict[str, Any]:
+    
+    async def test_provider_connection(self, provider_id: str, api_key: Optional[str] = None) -> Dict[str, Any]:
         """
         测试特定LLM提供商的连接。
         尝试创建一个提供商实例并执行一个简单的API调用。
+        
+        Args:
+            provider_id: 提供商ID
+            api_key: 可选的API密钥，如果不提供则从环境变量获取
+            
+        Returns:
+            测试结果字典
         """
         logger.info(f"Attempting to test connection for provider: {provider_id}")
-        api_key = os.environ.get(f"{provider_id.upper()}_API_KEY")
+        
+        # 获取API密钥：优先使用传入的密钥，否则从环境变量获取
+        if not api_key:
+            api_key = os.environ.get(f"{provider_id.upper()}_API_KEY")
         
         if not api_key:
             return {
                 "provider_name": provider_id,
                 "test_passed": False,
-                "message": f"API Key for {provider_id.capitalize()} is not configured in environment variables."
+                "message": f"API Key for {provider_id.capitalize()} is not provided or configured in environment variables."
             }
 
         try:
@@ -441,19 +508,205 @@ class LlmApiService:
                 api_key=api_key,
             )
             
+            # 尝试获取模型列表来测试连接
             models = await llm_provider_instance.list_models()
             
+            # 如果成功获取模型列表，认为连接正常
             return {
                 "provider_name": provider_id,
                 "test_passed": True,
                 "message": f"Connection to {provider_id.capitalize()} successful. Found {len(models)} models.",
-                "details": {"models_found": len(models)}
+                "details": {
+                    "models_found": len(models),
+                    "models": models[:5] if models else []  # 返回前5个模型作为示例
+                }
             }
-        except Exception as e:
-            logger.error(f"Connection test failed for provider {provider_id}: {str(e)}", exc_info=True)
+        except ValueError as e:
+            # API密钥格式错误或配置问题
+            logger.warning(f"Configuration error for provider {provider_id}: {str(e)}")
             return {
                 "provider_name": provider_id,
                 "test_passed": False,
-                "message": f"Connection to {provider_id.capitalize()} failed: {str(e)}",
-                "details": {"error": str(e)}
+                "message": f"Configuration error for {provider_id.capitalize()}: {str(e)}",
+                "details": {"error_type": "configuration_error", "error": str(e)}
+            }
+        except Exception as e:
+            # 网络错误或其他API调用失败
+            logger.error(f"Connection test failed for provider {provider_id}: {str(e)}", exc_info=True)
+            error_message = str(e)
+            
+            # 提供更具体的错误信息
+            if "api key" in error_message.lower() or "unauthorized" in error_message.lower():
+                error_type = "authentication_error"
+                friendly_message = f"Authentication failed for {provider_id.capitalize()}. Please check your API key."
+            elif "network" in error_message.lower() or "timeout" in error_message.lower():
+                error_type = "network_error"
+                friendly_message = f"Network error when connecting to {provider_id.capitalize()}. Please check your internet connection."
+            else:
+                error_type = "api_error"
+                friendly_message = f"Connection to {provider_id.capitalize()} failed: {error_message}"
+            
+            return {
+                "provider_name": provider_id,
+                "test_passed": False,
+                "message": friendly_message,
+                "details": {"error_type": error_type, "error": error_message}
+            }
+    
+    async def get_provider_models(self, provider_id: str) -> List[Dict[str, Any]]:
+        """
+        获取特定LLM提供商的动态模型列表
+        
+        Args:
+            provider_id: 提供商ID
+            
+        Returns:
+            模型列表
+        """
+        logger.info(f"Getting models for provider: {provider_id}")
+        api_key = os.environ.get(f"{provider_id.upper()}_API_KEY")
+        
+        if not api_key:
+            logger.warning(f"API Key for {provider_id.capitalize()} is not configured")
+            # 返回静态模型列表作为后备
+            return self._get_static_models_for_provider(provider_id)
+        
+        try:
+            llm_provider_instance = LLMProviderFactory.create_provider(
+                provider_id=provider_id,
+                api_key=api_key,
+            )
+            
+            models = await llm_provider_instance.list_models()
+            logger.info(f"Successfully retrieved {len(models)} models for provider {provider_id}")
+            return models
+            
+        except Exception as e:
+            logger.error(f"Failed to get models for provider {provider_id}: {str(e)}", exc_info=True)
+            # 返回静态模型列表作为后备
+            return self._get_static_models_for_provider(provider_id)
+
+    def _get_static_models_for_provider(self, provider_id: str) -> List[Dict[str, Any]]:
+        """
+        获取提供商的静态模型列表作为后备
+        
+        Args:
+            provider_id: 提供商ID
+            
+        Returns:
+            静态模型列表
+        """
+        static_models = {
+            "openai": [
+                {"id": "gpt-4o", "context_window": 128000, "max_output_tokens": 4096, "capabilities": ["text", "vision"]},
+                {"id": "gpt-4o-mini", "context_window": 128000, "max_output_tokens": 4096, "capabilities": ["text", "vision"]},
+                {"id": "gpt-3.5-turbo", "context_window": 16385, "max_output_tokens": 4096, "capabilities": ["text"]},
+            ],
+            "anthropic": [
+                {"id": "claude-3-5-sonnet-20241022", "context_window": 200000, "max_output_tokens": 4096, "capabilities": ["text", "vision"]},
+                {"id": "claude-3-5-haiku-20241022", "context_window": 200000, "max_output_tokens": 4096, "capabilities": ["text", "vision"]},
+                {"id": "claude-3-opus-20240229", "context_window": 200000, "max_output_tokens": 4096, "capabilities": ["text", "vision"]},
+            ],
+            "gemini": [
+                {"id": "gemini-1.5-pro", "context_window": 1000000, "max_output_tokens": 8192, "capabilities": ["text", "vision"]},
+                {"id": "gemini-1.5-flash", "context_window": 1000000, "max_output_tokens": 8192, "capabilities": ["text", "vision"]},
+                {"id": "gemini-pro", "context_window": 30720, "max_output_tokens": 2048, "capabilities": ["text"]},
+            ],
+            "deepseek": [
+                {"id": "deepseek-chat", "context_window": 32768, "max_output_tokens": 4096, "capabilities": ["text"]},
+                {"id": "deepseek-coder", "context_window": 16384, "max_output_tokens": 4096, "capabilities": ["text"]},            ],
+        }
+        
+        return static_models.get(provider_id, [])
+    
+    async def update_provider_config(self, provider_name: str, config_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        更新LLM提供商配置
+        
+        Args:
+            provider_name: 提供商名称
+            config_data: 配置数据
+            
+        Returns:
+            更新结果字典
+        """
+        try:
+            logger.info(f"Updating configuration for provider: {provider_name}")
+            
+            # 验证提供商名称
+            valid_providers = ["openai", "anthropic", "gemini", "deepseek"]
+            if provider_name.lower() not in valid_providers:
+                return {
+                    "success": False,
+                    "message": f"Invalid provider name: {provider_name}. Valid providers are: {', '.join(valid_providers)}"
+                }
+            
+            # 验证配置数据结构
+            if not isinstance(config_data, dict):
+                return {
+                    "success": False,
+                    "message": "Configuration data must be a dictionary"
+                }
+            
+            # 验证必需的配置字段
+            required_fields = ["api_key"]
+            missing_fields = [field for field in required_fields if field not in config_data]
+            if missing_fields:
+                return {
+                    "success": False,
+                    "message": f"Missing required configuration fields: {', '.join(missing_fields)}"
+                }
+            
+            # 验证API密钥格式（基本验证）
+            api_key = config_data.get("api_key", "").strip()
+            if not api_key or len(api_key) < 10:
+                return {
+                    "success": False,
+                    "message": "Invalid API key format"
+                }
+            
+            # 如果提供了模型名称，验证模型是否有效
+            if "model" in config_data:
+                model_name = config_data["model"]
+                static_models = self._get_static_models_for_provider(provider_name.lower())
+                valid_model_ids = [model["id"] for model in static_models]
+                if model_name not in valid_model_ids:
+                    logger.warning(f"Model {model_name} not found in static models for {provider_name}, but allowing it")
+            
+            # 测试配置是否有效（可选，根据需要启用）
+            test_connection = config_data.get("test_connection", False)
+            if test_connection:
+                test_result = await self.test_provider_connection(provider_name, api_key)
+                if not test_result.get("test_passed"):
+                    return {
+                        "success": False,
+                        "message": f"Configuration test failed: {test_result.get('message', 'Unknown error')}"
+                    }
+            
+            # 创建LLM控制器实例来保存配置
+            from llm_api.controller import LLMController
+            controller = LLMController()
+            
+            # 更新配置
+            success = controller.update_provider_config(provider_name, config_data)
+            
+            if success:
+                logger.info(f"Successfully updated configuration for provider: {provider_name}")
+                return {
+                    "success": True,
+                    "message": f"Configuration for {provider_name} updated successfully",
+                    "provider": provider_name,
+                    "updated_fields": list(config_data.keys())
+                }
+            else:
+                return {
+                    "success": False,
+                    "message": f"Failed to save configuration for {provider_name}"
+                }
+                
+        except Exception as e:
+            logger.error(f"Error updating provider config for {provider_name}: {str(e)}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Internal error while updating configuration: {str(e)}"
             }

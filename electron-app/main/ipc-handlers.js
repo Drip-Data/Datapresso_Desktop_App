@@ -77,7 +77,6 @@ function registerLlmApiHandlers() {
     { channel: 'providers', method: 'GET' },
     // Note: invoke_async was previously mapped to /batch. createLlmBatchTask in preload uses 'api:llm_api/batch'.
   ]);
-
   // Add specific handler for test_connection
   ipcMain.handle('api:llm_api/providers/test_connection', async (event, providerName) => {
     try {
@@ -88,6 +87,34 @@ function registerLlmApiHandlers() {
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
       console.error(`Error in IPC api:llm_api/providers/test_connection for ${providerName}:`, errorMessage, error.response?.data);
+      return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
+    }
+  });
+
+  // Add specific handler for fetchProviderModels
+  ipcMain.handle('api:llm_api/providers/models', async (event, providerName) => {
+    try {
+      const url = `${API_BASE_URL}/llm_api/providers/${providerName}/models`;
+      console.log(`IPC: Handling api:llm_api/providers/models for ${providerName} with GET to ${url}`);
+      const response = await axios.get(url);
+      return response.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
+      console.error(`Error in IPC api:llm_api/providers/models for ${providerName}:`, errorMessage, error.response?.data);
+      return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
+    }
+  });
+
+  // Add specific handler for updateLlmProviderConfig
+  ipcMain.handle('api:llm_api/providers/update_config', async (event, { providerName, configData }) => {
+    try {
+      const url = `${API_BASE_URL}/llm_api/providers/${providerName}/config`;
+      console.log(`IPC: Handling api:llm_api/providers/update_config for ${providerName} with POST to ${url}`);
+      const response = await axios.post(url, configData);
+      return response.data;
+    } catch (error) {
+      const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
+      console.error(`Error in IPC api:llm_api/providers/update_config for ${providerName}:`, errorMessage, error.response?.data);
       return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
     }
   });

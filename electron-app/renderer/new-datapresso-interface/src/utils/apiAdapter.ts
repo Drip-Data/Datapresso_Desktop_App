@@ -51,6 +51,8 @@ interface ElectronAPI {
   getLlmModels: (params?: any) => Promise<any>;
   fetchLLMProviders: () => Promise<any>;
   testLlmProviderConnection: (providerName: string) => Promise<any>; // Added
+  fetchProviderModels: (providerName: string) => Promise<any>; // Added
+  updateLlmProviderConfig: (providerName: string, configData: any) => Promise<any>; // Added
   uploadSeedData: (fileBuffer: number[], fileName: string, dataType?: string) => Promise<any>; // Added
   listSeedData: (params?: { page?: number; pageSize?: number; statusFilter?: string }) => Promise<any>; // Added
 
@@ -129,11 +131,12 @@ async function callApi(electronFuncKey: keyof ElectronAPI, httpFunc: Function | 
     } else if (electronFuncKey === 'listLlmTasks') {
       if (electronFunc) response = await (electronFunc as ElectronAPI['listLlmTasks'])(snakeParams);
     } else if (electronFuncKey === 'getLlmModels') {
-      if (electronFunc) response = await (electronFunc as ElectronAPI['getLlmModels'])(snakeParams);
-    } else if (electronFuncKey === 'fetchLLMProviders') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['getLlmModels'])(snakeParams);    } else if (electronFuncKey === 'fetchLLMProviders') {
       if (electronFunc) response = await (electronFunc as ElectronAPI['fetchLLMProviders'])();
     } else if (electronFuncKey === 'testLlmProviderConnection') {
       if (electronFunc) response = await (electronFunc as ElectronAPI['testLlmProviderConnection'])(params); // providerName is string
+    } else if (electronFuncKey === 'updateLlmProviderConfig') {
+      if (electronFunc) response = await (electronFunc as ElectronAPI['updateLlmProviderConfig'])(params.providerName, keysToSnake(params.configData));
     } else if (electronFuncKey === 'uploadSeedData') {
       const file = params.file;
       const dataType = params.dataType;
@@ -498,6 +501,44 @@ export const testLlmProviderConnection = async (providerName: string): Promise<a
   }
 };
 
+export const fetchProviderModels = async (providerName: string): Promise<any> => {
+  if (isElectron && window.electronAPI) {
+    if (typeof window.electronAPI.fetchProviderModels !== 'function') {
+      console.warn('electronAPI.fetchProviderModels is not defined, falling back to HTTP.');
+      // Fall through to HTTP fallback
+    } else {
+      try {
+        const rawResponse = await window.electronAPI.fetchProviderModels(providerName);
+        return keysToCamel(rawResponse);
+      } catch (error) {
+        console.error('electronAPI.fetchProviderModels failed, falling back to HTTP:', error);
+        // Fall through to HTTP fallback
+      }
+    }
+  }
+  
+  // HTTP fallback
+  try {
+    const response = await fetch(`${API_BASE_URL}/llm_api/providers/${providerName}/models`, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    if (!response.ok) {
+      let errorDetail = response.statusText;
+      try {
+        const errorData = await response.json();
+        errorDetail = errorData.detail || errorDetail;
+      } catch (e) { /* ignore */ }
+      throw new Error(`HTTP error! status: ${response.status} - ${errorDetail}`);
+    }
+    const rawResponse = await response.json();
+    return keysToCamel(rawResponse);
+  } catch (error) {
+    console.error('Error in fetchProviderModels:', error);
+    throw error;
+  }
+};
+
 // 添加Electron特有功能的API
 export const openFile = async (options?: any): Promise<any> => {
   if (isElectron && window.electronAPI) {
@@ -599,20 +640,7 @@ export const getLlmProviderConfig = async (providerName: string): Promise<any> =
 };
 
 export const updateLlmProviderConfig = async (providerName: string, configData: any): Promise<any> => {
-  if (isElectron && window.electronAPI) {
-    throw new Error('updateLlmProviderConfig not yet implemented in Electron API');
-  } else {
-    const response = await fetch(`${API_BASE_URL}/llm/providers/${providerName}/config`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(keysToSnake(configData)),
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to update LLM provider config: ${response.status} ${response.statusText}`);
-    }
-    const rawResponse = await response.json();
-    return keysToCamel(rawResponse);
-  }
+  return callApi('updateLlmProviderConfig', null, { providerName, configData });
 };
 
 // ===== 系统提示模板管理 API =====

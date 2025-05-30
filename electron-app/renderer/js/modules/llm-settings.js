@@ -27,9 +27,8 @@ class LLMSettingsComponent {
     }
 
     async loadProviderConfigs() {
-        try {
-            // 通过API获取当前配置
-            const response = await window.electronAPI.getLLMProviders();
+        try {            // 通过API获取当前配置
+            const response = await window.electronAPI.fetchLLMProviders();
             
             if (response.status === 'success') {
                 this.providerConfigs = response.providers;
@@ -133,12 +132,16 @@ class LLMSettingsComponent {
                         </button>
                     </div>
                 </div>
-                
-                <div class="form-group">
+                  <div class="form-group">
                     <label for="default-model">默认模型</label>
-                    <select id="default-model" class="form-control">
-                        ${this.renderModelOptions()}
-                    </select>
+                    <div class="input-with-action">
+                        <select id="default-model" class="form-control">
+                            ${this.renderModelOptions()}
+                        </select>
+                        <button id="refresh-models-btn" class="btn btn-icon" title="刷新模型列表">
+                            <i class="ri-refresh-line"></i>
+                        </button>
+                    </div>
                 </div>
                 
                 ${this.renderProviderSpecificSettings()}
@@ -151,14 +154,12 @@ class LLMSettingsComponent {
                 <div id="connection-status" class="connection-status"></div>
             </div>
         `;
-    }
-
-    renderModelOptions() {
+    }    renderModelOptions() {
         const config = this.providerConfigs[this.activeProvider];
         const models = config.models || [];
         
         if (models.length === 0) {
-            return `<option value="">无可用模型</option>`;
+            return `<option value="">无可用模型 (点击"刷新模型"按钮获取)</option>`;
         }
         
         return models
@@ -167,9 +168,7 @@ class LLMSettingsComponent {
                 return `<option value="${model}" ${isSelected ? 'selected' : ''}>${model}</option>`;
             })
             .join('');
-    }
-
-    renderProviderSpecificSettings() {
+    }    renderProviderSpecificSettings() {
         // 根据不同提供商渲染特定设置
         switch (this.activeProvider) {
             case 'openai':
@@ -191,6 +190,23 @@ class LLMSettingsComponent {
                             placeholder="2023-06-01">
                     </div>
                 `;
+            case 'gemini':
+                return `
+                    <div class="form-group">
+                        <label for="gemini-project-id">项目ID (可选)</label>
+                        <input type="text" id="gemini-project-id" class="form-control" 
+                            value="${this.providerConfigs.gemini?.project_id || ''}" 
+                            placeholder="your-project-id">
+                        <div class="form-hint">Google Cloud项目ID，用于企业账户</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="gemini-location">位置 (可选)</label>
+                        <input type="text" id="gemini-location" class="form-control" 
+                            value="${this.providerConfigs.gemini?.location || 'us-central1'}" 
+                            placeholder="us-central1">
+                        <div class="form-hint">Google Cloud区域</div>
+                    </div>
+                `;
             case 'deepseek':
                 return `
                     <div class="form-group">
@@ -198,6 +214,31 @@ class LLMSettingsComponent {
                         <input type="text" id="deepseek-base-url" class="form-control" 
                             value="${this.providerConfigs.deepseek?.base_url || 'https://api.deepseek.com/v1'}" 
                             placeholder="https://api.deepseek.com/v1">
+                    </div>
+                `;
+            case 'local_llm':
+                return `
+                    <div class="form-group">
+                        <label for="local-base-url">本地服务器URL</label>
+                        <input type="text" id="local-base-url" class="form-control" 
+                            value="${this.providerConfigs.local_llm?.base_url || 'http://127.0.0.1:8080'}" 
+                            placeholder="http://127.0.0.1:8080">
+                        <div class="form-hint">本地LLM服务器地址</div>
+                    </div>
+                    <div class="form-group">
+                        <label for="local-server-type">服务器类型</label>
+                        <select id="local-server-type" class="form-control">
+                            <option value="llama.cpp" ${(this.providerConfigs.local_llm?.server_type || 'llama.cpp') === 'llama.cpp' ? 'selected' : ''}>llama.cpp</option>
+                            <option value="ollama" ${this.providerConfigs.local_llm?.server_type === 'ollama' ? 'selected' : ''}>Ollama</option>
+                            <option value="text-generation-webui" ${this.providerConfigs.local_llm?.server_type === 'text-generation-webui' ? 'selected' : ''}>Text Generation WebUI</option>
+                            <option value="vllm" ${this.providerConfigs.local_llm?.server_type === 'vllm' ? 'selected' : ''}>vLLM</option>
+                        </select>
+                        <div class="form-hint">选择本地LLM服务器类型</div>
+                    </div>
+                    <div class="form-group">
+                        <div class="form-hint">
+                            <strong>注意：</strong>本地LLM不需要API密钥，请确保本地服务器正在运行。
+                        </div>
                     </div>
                 `;
             default:
@@ -238,11 +279,16 @@ class LLMSettingsComponent {
         if (saveProviderBtn) {
             saveProviderBtn.addEventListener('click', () => this.saveProviderConfig());
         }
-        
-        // 添加提供商
+          // 添加提供商
         const addProviderBtn = this.container.querySelector('#add-provider-btn');
         if (addProviderBtn) {
             addProviderBtn.addEventListener('click', () => this.showAddProviderDialog());
+        }
+        
+        // 刷新模型列表
+        const refreshModelsBtn = this.container.querySelector('#refresh-models-btn');
+        if (refreshModelsBtn) {
+            refreshModelsBtn.addEventListener('click', () => this.refreshProviderModels());
         }
     }
 
@@ -261,8 +307,7 @@ class LLMSettingsComponent {
             const providerId = this.activeProvider;
             const apiKey = this.container.querySelector('#api-key').value;
             const defaultModel = this.container.querySelector('#default-model').value;
-            
-            // 根据提供商获取特定设置
+              // 根据提供商获取特定设置
             let additionalConfig = {};
             switch (providerId) {
                 case 'openai':
@@ -276,6 +321,18 @@ class LLMSettingsComponent {
                 case 'deepseek':
                     const deepseekBaseUrl = this.container.querySelector('#deepseek-base-url').value;
                     if (deepseekBaseUrl) additionalConfig.base_url = deepseekBaseUrl;
+                    break;
+                case 'gemini':
+                    const projectId = this.container.querySelector('#gemini-project-id').value;
+                    const location = this.container.querySelector('#gemini-location').value;
+                    if (projectId) additionalConfig.project_id = projectId;
+                    if (location) additionalConfig.location = location;
+                    break;
+                case 'local_llm':
+                    const localBaseUrl = this.container.querySelector('#local-base-url').value;
+                    const serverType = this.container.querySelector('#local-server-type').value;
+                    if (localBaseUrl) additionalConfig.base_url = localBaseUrl;
+                    if (serverType) additionalConfig.server_type = serverType;
                     break;
             }
             
@@ -334,8 +391,7 @@ class LLMSettingsComponent {
                 default_model: defaultModel,
                 models: this.providerConfigs[providerId].models || []
             };
-            
-            // 根据提供商获取特定设置
+              // 根据提供商获取特定设置
             switch (providerId) {
                 case 'openai':
                     const baseUrl = this.container.querySelector('#api-base-url').value;
@@ -349,10 +405,23 @@ class LLMSettingsComponent {
                     const deepseekBaseUrl = this.container.querySelector('#deepseek-base-url').value;
                     if (deepseekBaseUrl) config.base_url = deepseekBaseUrl;
                     break;
+                case 'gemini':
+                    const projectId = this.container.querySelector('#gemini-project-id').value;
+                    const location = this.container.querySelector('#gemini-location').value;
+                    if (projectId) config.project_id = projectId;
+                    if (location) config.location = location;
+                    break;
+                case 'local_llm':
+                    const localBaseUrl = this.container.querySelector('#local-base-url').value;
+                    const serverType = this.container.querySelector('#local-server-type').value;
+                    if (localBaseUrl) config.base_url = localBaseUrl;
+                    if (serverType) config.server_type = serverType;
+                    // 本地LLM不需要API密钥
+                    config.api_key = '';
+                    break;
             }
-            
-            // 保存配置
-            const response = await window.electronAPI.saveLLMProviderConfig(providerId, config);
+              // 保存配置
+            const response = await window.electronAPI.updateLlmProviderConfig(providerId, config);
             
             if (response.status === 'success') {
                 showSuccessNotification('提供商配置已保存');
@@ -460,12 +529,69 @@ class LLMSettingsComponent {
                         this.activeProvider = providerId;
                         this.render();
                         this.attachEventListeners();
-                        
-                        return true;
+                          return true;
                     }
                 }
             ]
         });
+    }
+    
+    async refreshProviderModels() {
+        try {
+            const providerId = this.activeProvider;
+            const refreshBtn = this.container.querySelector('#refresh-models-btn');
+            const modelSelect = this.container.querySelector('#default-model');
+            
+            // 检查API Key是否已配置
+            const apiKey = this.container.querySelector('#api-key').value;
+            if (!apiKey && providerId !== 'local') {
+                showErrorNotification('请先输入API密钥后再刷新模型列表');
+                return;
+            }
+            
+            // 显示加载状态
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="ri-loader-line spinning"></i>';
+            modelSelect.innerHTML = '<option value="">加载中...</option>';
+            
+            // 调用动态模型获取API
+            const response = await window.electronAPI.fetchProviderModels(providerId);
+            
+            if (response.status === 'success' && response.data && response.data.models) {
+                // 更新提供商配置中的模型列表
+                const models = response.data.models.map(model => 
+                    typeof model === 'string' ? model : model.id || model.name || model
+                );
+                
+                this.providerConfigs[providerId].models = models;
+                
+                // 重新渲染模型选择器
+                modelSelect.innerHTML = this.renderModelOptions();
+                
+                showSuccessNotification(`成功获取 ${models.length} 个可用模型`);
+                
+                // 如果没有默认模型，选择第一个
+                if (models.length > 0 && !this.providerConfigs[providerId].default_model) {
+                    this.providerConfigs[providerId].default_model = models[0];
+                    modelSelect.value = models[0];
+                }
+            } else {
+                throw new Error(response.message || '获取模型列表失败');
+            }
+            
+        } catch (error) {
+            console.error('刷新模型列表失败:', error);
+            showErrorNotification('刷新模型列表失败: ' + error.message);
+            
+            // 恢复原来的模型选择器
+            const modelSelect = this.container.querySelector('#default-model');
+            modelSelect.innerHTML = this.renderModelOptions();
+        } finally {
+            // 恢复按钮状态
+            const refreshBtn = this.container.querySelector('#refresh-models-btn');
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = '<i class="ri-refresh-line"></i>';
+        }
     }
 }
 

@@ -235,85 +235,70 @@ async def get_batch_task_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/providers", response_model=Dict[str, Any])
-async def get_llm_providers(
-    service: LlmApiService = Depends(get_llm_api_service)
-):
+async def get_llm_providers(service: LlmApiService = Depends(get_llm_api_service)):
     """获取所有可用的LLM提供商和模型信息"""
     try:
-        # Temporary fix: return static data to bypass service errors
-        providers = {
-            "openai": {
-                "models": {
-                    "gpt-4o": {
-                        "context_window": 128000,
-                        "max_output_tokens": 4096,
-                        "capabilities": ["text", "vision", "function_calling"]
-                    },
-                    "gpt-3.5-turbo": {
-                        "context_window": 16385,
-                        "max_output_tokens": 4096,
-                        "capabilities": ["text"]
-                    }
-                },
-                "pricing": {
-                    "gpt-4o": {"prompt": 0.005, "completion": 0.015},
-                    "gpt-3.5-turbo": {"prompt": 0.0005, "completion": 0.0015}
-                },
-                "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": True,
-                    "embeddings": True,
-                    "batch": True
-                }
-            },
-            "anthropic": {
-                "models": {
-                    "claude-3-5-sonnet-20241022": {
-                        "context_window": 200000,
-                        "max_output_tokens": 4096,
-                        "capabilities": ["text", "vision"]
-                    }
-                },
-                "pricing": {
-                    "claude-3-5-sonnet-20241022": {"prompt": 0.003, "completion": 0.015}
-                },
-                "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
-                "capabilities": {
-                    "text": True,
-                    "images": True,
-                    "embeddings": False,
-                    "batch": True
-                }
-            },
-            "mock": {
-                "models": {
-                    "mock-model": {
-                        "context_window": 4096,
-                        "max_output_tokens": 1024,
-                        "capabilities": ["text"]
-                    }
-                },
-                "pricing": {
-                    "mock-model": {"prompt": 0.0, "completion": 0.0}
-                },
-                "has_api_key": True, # Mock provider doesn't need a key, but set to True for consistency
-                "capabilities": {
-                    "text": True,
-                    "images": False, # Or True if you plan to mock image responses too
-                    "embeddings": False,
-                    "batch": True # Can be True if you plan to mock batch responses
-                }
-            }
-        }
+        logger.info("Handling GET /providers request")
+        
+        # 使用服务层获取提供商信息
+        providers_info = await service.get_providers_info()
         
         return {
             "status": "success",
-            "providers": providers
+            "message": "Successfully retrieved LLM providers information",
+            "providers": providers_info
         }
+        
     except Exception as e:
         logger.error(f"Error in get_llm_providers: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        
+        # 如果出错，返回基本的静态信息
+        return {
+            "status": "success", 
+            "message": "Retrieved static provider information (dynamic detection failed)",
+            "providers": {
+                "openai": {
+                    "models": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
+                    "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
+                    "capabilities": {"text": True, "images": True, "embeddings": True, "batch": True}
+                },
+                "anthropic": {
+                    "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
+                    "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
+                    "capabilities": {"text": True, "images": True, "embeddings": False, "batch": True}
+                },
+                "gemini": {
+                    "models": ["gemini-1.5-pro", "gemini-1.5-flash"],
+                    "has_api_key": bool(os.environ.get("GEMINI_API_KEY")),
+                    "capabilities": {"text": True, "images": True, "embeddings": True, "batch": False}
+                },
+                "deepseek": {
+                    "models": ["deepseek-chat", "deepseek-coder"],
+                    "has_api_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
+                    "capabilities": {"text": True, "images": False, "embeddings": True, "batch": False}
+                }
+            }        }
+
+@router.get("/providers/{provider_name}/models", response_model=BaseResponse)
+async def get_provider_models(
+    provider_name: str,
+    service: LlmApiService = Depends(get_llm_api_service)
+):
+    """
+    获取特定LLM提供商的动态模型列表
+    """
+    try:
+        logger.info(f"Received request to get models for provider: {provider_name}")
+        models = await service.get_provider_models(provider_name)
+        
+        return BaseResponse(
+            status="success",
+            message=f"Successfully retrieved models for {provider_name}",
+            data={"provider": provider_name, "models": models}
+        )
+    except Exception as e:
+        logger.error(f"Error getting models for provider {provider_name}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to get models for {provider_name}: {str(e)}")
 
 @router.post("/providers/{provider_name}/test", response_model=BaseResponse)
 async def test_llm_provider_connection(
@@ -344,3 +329,50 @@ async def test_llm_provider_connection(
     except Exception as e:
         logger.error(f"Error testing LLM provider {provider_name}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Internal server error while testing provider: {str(e)}")
+
+@router.post("/providers/{provider_name}/config", response_model=BaseResponse)
+async def update_provider_config(
+    provider_name: str,
+    config_data: Dict[str, Any],
+    service: LlmApiService = Depends(get_llm_api_service)
+):
+    """
+    更新LLM提供商配置
+    
+    Args:
+        provider_name: 提供商名称
+        config_data: 配置数据
+    
+    Returns:
+        更新结果
+    """
+    try:
+        logger.info(f"Received request to update config for provider: {provider_name}")
+        
+        # 验证提供商名称
+        if not provider_name:
+            raise HTTPException(status_code=400, detail="Provider name is required")
+          # 验证配置数据
+        if not config_data:
+            raise HTTPException(status_code=400, detail="Configuration data is required")
+        
+        # 调用服务层更新配置
+        result = await service.update_provider_config(provider_name, config_data)
+        
+        if result.get("success"):
+            return BaseResponse(
+                status="success",
+                message=f"Successfully updated configuration for {provider_name}",
+                request_id=f"update-config-{provider_name}-{int(time.time() * 1000)}"
+            )
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail=result.get("message", f"Failed to update configuration for {provider_name}")
+            )
+            
+    except HTTPException:
+        raise  # Re-raise HTTPException
+    except Exception as e:
+        logger.error(f"Error updating config for provider {provider_name}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Internal server error while updating provider config: {str(e)}")

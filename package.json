@@ -9,7 +9,26 @@
     "build:react": "cd electron-app/renderer/new-datapresso-interface && npm run build",
     "dev:electron": "electron .",
     "build": "npm run build:react && electron-builder",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "diagnose": "node scripts/diagnose.js",
+    "cleanup": "node scripts/cleanup.js",
+    "init": "node scripts/init-project.js",
+    "pull": "node scripts/pull-from-github.js",
+    "update": "npm run pull && npm install && npm run diagnose",
+    "force-clean": "node scripts/force-clean.js",
+    "kill-processes": "powershell -Command \"Get-Process | Where-Object {$_.ProcessName -eq 'node' -or $_.ProcessName -eq 'electron' -or $_.ProcessName -eq 'python'} | Stop-Process -Force\"",
+    "install-all": "npm install && cd electron-app/renderer/new-datapresso-interface && npm install",
+    "setup-frontend": "cd electron-app/renderer && npm create vite@latest new-datapresso-interface -- --template react-ts && cd new-datapresso-interface && npm install",
+    "check-frontend": "cd electron-app/renderer/new-datapresso-interface && npm list vite || echo 'Frontend not properly installed'",
+    "install-frontend": "cd electron-app/renderer/new-datapresso-interface && npm install",
+    "clean-frontend": "powershell -Command \"Remove-Item -Path 'electron-app/renderer/new-datapresso-interface/node_modules' -Recurse -Force -ErrorAction SilentlyContinue; Remove-Item -Path 'electron-app/renderer/new-datapresso-interface/package-lock.json' -Force -ErrorAction SilentlyContinue\"",
+    "fix-frontend": "cd electron-app/renderer/new-datapresso-interface && npm cache clean --force && del package-lock.json && rmdir /s node_modules && npm install --legacy-peer-deps",
+    "fix-swc": "cd electron-app/renderer/new-datapresso-interface && npm uninstall @vitejs/plugin-react-swc && npm install @vitejs/plugin-react --save-dev",
+    "rebuild-native": "cd electron-app/renderer/new-datapresso-interface && npm rebuild @swc/core",
+    "fix-vite-config": "powershell -Command \"(Get-Content 'electron-app/renderer/new-datapresso-interface/vite.config.ts') -replace '@vitejs/plugin-react-swc', '@vitejs/plugin-react' | Set-Content 'electron-app/renderer/new-datapresso-interface/vite.config.ts'\"",
+    "quick-fix": "npm run fix-swc && npm run fix-vite-config",
+    "test-frontend": "cd electron-app/renderer/new-datapresso-interface && npm run dev",
+    "postinstall": "npm run install-frontend"
   },
   "author": "",
   "license": "ISC",
@@ -24,7 +43,8 @@
     "cross-spawn": "^7.0.3",
     "electron-log": "^5.0.1",
     "electron-store": "^8.1.0",
-    "fs-extra": "^11.1.1"
+    "fs-extra": "^11.1.1",
+    "rimraf": "^5.0.5"
   },
   "build": {
     "appId": "com.datapresso.desktop",

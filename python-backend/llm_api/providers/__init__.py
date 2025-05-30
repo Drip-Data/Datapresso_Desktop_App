@@ -1,34 +1,15 @@
 # This file makes Python treat the 'providers' directory as a package.
-# It also serves to ensure all provider modules are imported, which should
-# trigger their self-registration with the LLMProviderFactory.
+# Providers are now loaded lazily through the LLMProviderFactory to avoid
+# blocking imports during application startup.
 
 import logging
 
 logger = logging.getLogger(__name__)
 
-try:
-    from . import local_llm_provider
-    logger.debug("Successfully imported local_llm_provider.")
-except ImportError as e:
-    logger.warning(f"Could not import local_llm_provider: {e}")
+# 不再立即导入所有提供者模块，而是通过工厂进行懒加载
+# 这避免了由于缺失依赖或配置问题导致的启动阻塞
 
-try:
-    from . import openai_provider
-    logger.debug("Successfully imported openai_provider.")
-except ImportError as e:
-    logger.warning(f"Could not import openai_provider: {e}")
-
-try:
-    from . import anthropic_provider
-    logger.debug("Successfully imported anthropic_provider.")
-except ImportError as e:
-    logger.warning(f"Could not import anthropic_provider: {e}")
-
-try:
-    from . import gemini_provider
-    logger.debug("Successfully imported gemini_provider.")
-except ImportError as e:
-    logger.warning(f"Could not import gemini_provider: {e}")
+logger.debug("Provider package initialized with lazy loading support.")
     
 try:
     from . import deepseek_provider

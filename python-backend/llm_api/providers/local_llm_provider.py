@@ -16,7 +16,7 @@ class LocalLLMProvider(BaseLLMProvider):
     """本地LLM适配器，支持不同的本地LLM服务器"""
     
     def __init__(self, model_name: str = "local-model", api_key: Optional[str] = None, 
-                base_url: str = "http://127.0.0.1:8080", server_type: str = "llama.cpp"):
+                 base_url: str = "http://127.0.0.1:8080", server_type: str = "llama.cpp"):
         """
         初始化本地LLM提供商
         
@@ -26,8 +26,9 @@ class LocalLLMProvider(BaseLLMProvider):
             base_url: 服务器URL
             server_type: 服务器类型("llama.cpp", "text-generation-webui", "ollama")
         """
-        self.model_name = model_name
-        self.api_key = api_key
+        super().__init__(api_key=api_key, model_name=model_name)
+        
+        # Remove duplicate assignments since they're now handled by BaseLLMProvider
         self.base_url = base_url
         self.server_type = server_type
         
@@ -372,4 +373,4 @@ class LocalLLMProvider(BaseLLMProvider):
         return info
 
 # 注册提供商
-LLMProviderFactory.register_provider("local", LocalLLMProvider)
+LLMProviderFactory.register_provider("local_llm", LocalLLMProvider)

@@ -26,8 +26,9 @@ DEEPSEEK_API_BASE_URL = "https://api.deepseek.com/v1" # Default, can be overridd
 
 class DeepSeekProvider(BaseLLMProvider):
     """DeepSeek API适配器 (OpenAI Compatible)"""
-    
     def __init__(self, api_key: Optional[str] = None, model_name: str = "deepseek-chat", base_url: Optional[str] = None):
+        super().__init__(api_key, model_name)
+        
         if not AsyncOpenAI or not tiktoken:
             raise ImportError("openai and tiktoken libraries are required to use DeepSeekProvider.")
 

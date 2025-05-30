@@ -18,10 +18,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   listLlmTasks: (params) => ipcRenderer.invoke('api:tasks/list', params),
   getLlmModels: (params) => ipcRenderer.invoke('api:llm_api/models', params),
   // fetchLLMProviders is defined below
-
   // LLM Providers API
   fetchLLMProviders: () => ipcRenderer.invoke('api:llm_api/providers'),
   testLlmProviderConnection: (providerName) => ipcRenderer.invoke('api:llm_api/providers/test_connection', providerName),
+  fetchProviderModels: (providerName) => ipcRenderer.invoke('api:llm_api/providers/models', providerName),
+  updateLlmProviderConfig: (providerName, configData) => ipcRenderer.invoke('api:llm_api/providers/update_config', { providerName, configData }),
 
   // Seed Data API
   uploadSeedData: (fileBuffer, fileName, dataType) => ipcRenderer.invoke('api:seed_data/upload', { fileBuffer, fileName, dataType }),
