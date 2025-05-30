@@ -5,15 +5,29 @@ import string
 import re
 import math
 import numpy as np
-from typing import List, Dict, Any, Optional, Callable
+from typing import List, Dict, Any, Optional, Callable, Tuple
 from datetime import datetime, timedelta
 import uuid
 import faker
+from pydantic import BaseModel # 导入BaseModel
 
 logger = logging.getLogger(__name__)
 
 # 初始化Faker实例用于生成随机数据
 fake = faker.Faker(['zh_CN', 'en_US'])
+
+# 定义FieldConstraint Pydantic模型
+class FieldConstraint(BaseModel):
+    field: str
+    type: Optional[str] = None
+    min_value: Optional[Any] = None
+    max_value: Optional[Any] = None
+    min_length: Optional[int] = None
+    max_length: Optional[int] = None
+    allowed_values: Optional[List[Any]] = None
+    regex_pattern: Optional[str] = None
+    nullable: Optional[bool] = True
+    unique: Optional[bool] = False
 
 class GeneratorEngine:
     """数据生成引擎，提供多种数据生成策略"""
@@ -335,7 +349,7 @@ class GeneratorEngine:
     def apply_constraints(
         self,
         data: List[Dict[str, Any]],
-        constraints: List[Dict[str, Any]]
+        constraints: List[FieldConstraint] # 更改为List[FieldConstraint]
     ) -> List[Dict[str, Any]]:
         """
         应用字段约束
@@ -348,7 +362,6 @@ class GeneratorEngine:
             应用约束后的数据列表
         """
         # 构建字段约束字典
-        # constraints is List[FieldConstraint], where FieldConstraint is a Pydantic model
         field_constraints_map: Dict[str, FieldConstraint] = {constraint.field: constraint for constraint in constraints}
         
         # 应用约束
@@ -583,6 +596,9 @@ class GeneratorEngine:
                                 new_value[idx] = self._mutate_text(element, variation_factor)
                             elif isinstance(element, bool):
                                 new_value[idx] = not element
+                            else:
+                                new_element = element
+                            new_value.append(new_element)
                     
                     elif mutation_type == "add" and new_value:
                         # 添加与现有元素类似的新元素
@@ -784,9 +800,9 @@ class GeneratorEngine:
                     "type": "unknown",
                     "values": []
                 }
-                continue
+                continue # 添加continue，确保跳过空值字段的后续处理
             
-            # 确定字段类型
+            # 确定字段类型并计算统计信息
             if all(isinstance(v, (int, float)) for v in values):
                 # 数值型字段
                 numeric_values = [float(v) for v in values]
@@ -835,16 +851,13 @@ class GeneratorEngine:
                     }
             elif all(isinstance(v, bool) for v in values):
                 # 布尔型字段
-                true_count = sum(1 for v in values if v)
-                false_count = len(values) - true_count
-                
+                true_count = sum(1 for v in values if v is True)
+                false_count = sum(1 for v in values if v is False)
                 field_stats[field] = {
                     "type": "boolean",
-                    "distribution": {
-                        True: true_count / len(values),
-                        False: false_count / len(values)
-                    },
-                    "values": [True, False]
+                    "true_ratio": true_count / len(values),
+                    "false_ratio": false_count / len(values),
+                    "values": values
                 }
             else:
                 # 混合类型，作为分类变量处理
@@ -929,7 +942,7 @@ class GeneratorEngine:
             min_val = 0.0
         if not isinstance(max_val, (int, float)):
             max_val = min_val + 1.0 # Ensure max_val is greater than min_val
-
+        
         if min_val > max_val: # Swap if min > max
             min_val, max_val = max_val, min_val
         
@@ -1122,7 +1135,7 @@ class GeneratorEngine:
                 "min_max_values": min_max_values,
                 "null_counts": null_counts
             }
-
+        
         all_fields = set()
         for record in data:
             all_fields.update(record.keys())
@@ -1202,9 +1215,153 @@ class GeneratorEngine:
             "min_max_values": min_max_values,
             "null_counts": null_counts
         }
+    
+    def generate_statistics_report(self, generated_data: List[Dict[str, Any]], 
+                                   seed_data: List[Dict[str, Any]] = None,
+                                   generation_time: float = 0) -> Dict[str, Any]:
+        """生成详细的统计报告，符合设计文档格式"""
+        stats = {
+            "generation_stats": {
+                "total_generated": len(generated_data),
+                "passed_initial_filter": 0,  # 将在过滤后更新
+                "rejected": 0,  # 将在过滤后更新
+                "generation_time": f"{generation_time:.2f}秒",
+                "average_time_per_sample": generation_time / len(generated_data) if generated_data else 0,
+                "domain_distribution": self._calculate_domain_distribution(generated_data),
+                "difficulty_distribution": self._calculate_difficulty_distribution(generated_data)
+            }
+        }
+        return stats
+
+    def _calculate_domain_distribution(self, data: List[Dict[str, Any]]) -> Dict[str, int]:
+        """计算领域分布"""
+        domains = {}
+        for item in data:
+            domain = item.get("metadata", {}).get("domain", "未分类")
+            if domain not in domains:
+                domains[domain] = 0
+            domains[domain] += 1
+        return domains
+
+    def _calculate_difficulty_distribution(self, data: List[Dict[str, Any]]) -> Dict[str, int]:
+        """计算难度分布"""
+        difficulty_ranges = {
+            "easy (0.0-0.3)": 0,
+            "medium (0.3-0.7)": 0,
+            "hard (0.7-1.0)": 0
+        }
+        
+        for item in data:
+            difficulty = item.get("metadata", {}).get("difficulty", 0.5)
+            if difficulty <= 0.3:
+                difficulty_ranges["easy (0.0-0.3)"] += 1
+            elif difficulty <= 0.7:
+                difficulty_ranges["medium (0.3-0.7)"] += 1
+            else:
+                difficulty_ranges["hard (0.7-1.0)"] += 1
+        
+        return difficulty_ranges
+
+    def apply_initial_filtering(self, generated_data: List[Dict[str, Any]], 
+                                filter_config: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        """应用初步质量筛选"""
+        if not filter_config.get("enabled", False):
+            return generated_data, {"filtered": 0, "passed": len(generated_data)}
+        
+        filtered_data = []
+        rejected_count = 0
+        rejection_reasons = {}
+        
+        min_length = filter_config.get("min_length", 0)
+        max_length = filter_config.get("max_length", float('inf'))
+        banned_patterns = filter_config.get("banned_patterns", [])
+        
+        # 编译正则表达式以提高性能
+        banned_regex = [re.compile(pattern, re.IGNORECASE) for pattern in banned_patterns]
+        
+        for item in generated_data:
+            # 获取响应文本
+            response_text = ""
+            if isinstance(item.get("response"), dict):
+                response_text = item["response"].get("origin_text", "")
+            elif isinstance(item.get("response"), str):
+                response_text = item["response"]
+            
+            # 检查长度
+            if len(response_text) < min_length:
+                rejected_count += 1
+                if "too_short" not in rejection_reasons:
+                    rejection_reasons["too_short"] = 0
+                rejection_reasons["too_short"] += 1
+                continue
+                
+            if len(response_text) > max_length:
+                rejected_count += 1
+                if "too_long" not in rejection_reasons:
+                    rejection_reasons["too_long"] = 0
+                rejection_reasons["too_long"] += 1
+                continue
+            
+            # 检查禁用模式
+            rejected = False
+            for pattern in banned_regex:
+                if pattern.search(response_text):
+                    rejected_count += 1
+                    pattern_str = pattern.pattern
+                    if pattern_str not in rejection_reasons:
+                        rejection_reasons[pattern_str] = 0
+                    rejection_reasons[pattern_str] += 1
+                    rejected = True
+                    break
+            
+            if not rejected:
+                filtered_data.append(item)
+        
+        filtering_stats = {
+            "filtered": rejected_count,
+            "passed": len(filtered_data),
+            "rejection_reasons": rejection_reasons
+        }
+        
+        return filtered_data, filtering_stats
+
+    def _enhance_metadata_with_seed_info(self, new_item: Dict[str, Any], 
+                                         seed_item: Dict[str, Any],
+                                         generation_params: Dict[str, Any]) -> Dict[str, Any]:
+        """增强元数据，添加种子数据关联信息"""
+        from datetime import datetime
+        
+        # 确保metadata存在
+        if "metadata" not in new_item:
+            new_item["metadata"] = {}
+        
+        # 添加种子ID关联
+        seed_id = seed_item.get("id", None)
+        if seed_id:
+            new_item["metadata"]["seed_id"] = seed_id
+        
+        # 添加生成信息
+        new_item["metadata"]["source"] = generation_params.get("model", "system") + "生成"
+        new_item["metadata"]["creation_timestamp"] = datetime.now().isoformat()
+        
+        # 添加生成参数
+        if "generation" not in new_item["metadata"]:
+            new_item["metadata"]["generation"] = {}
+        
+        new_item["metadata"]["generation"].update({
+            "model": generation_params.get("model", "unknown"),
+            "temperature": generation_params.get("temperature", 0.7),
+            "prompt_template": generation_params.get("prompt_template", "basic_generation"),
+            "generation_time": generation_params.get("generation_time", 0),
+            "initial_quality": generation_params.get("initial_quality", 0.5)
+        })
+        
+        return new_item
+
 
 # 创建全局生成引擎实例
 generator_engine = GeneratorEngine()
+
 
 def generate_data(
     generation_method: str,

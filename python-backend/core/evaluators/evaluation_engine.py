@@ -2,6 +2,8 @@ from typing import List, Dict, Any, Optional, Union
 import logging
 import statistics
 import json
+import os
+import pickle
 from datetime import datetime
 
 logger = logging.getLogger(__name__)
@@ -285,3 +287,350 @@ class EvaluationEngine:
                 "common_fields": len(common_fields)
             }
         }
+    
+    def evaluate_metrics_with_checkpoint(self, 
+                                       data: List[Dict[str, Any]],
+                                       metrics: List[str],
+                                       checkpoint_path: str = "evaluation_checkpoint.pkl",
+                                       batch_size: int = 100) -> Dict[str, Any]:
+        """支持断点续传的评估功能"""
+        logger.info(f"Starting evaluation with checkpoint support for {len(data)} samples")
+        
+        # 尝试加载检查点
+        start_index = 0
+        results = {}
+        
+        if os.path.exists(checkpoint_path):
+            try:
+                with open(checkpoint_path, 'rb') as f:
+                    checkpoint_data = pickle.load(f)
+                    start_index = checkpoint_data.get('processed_count', 0)
+                    results = checkpoint_data.get('results', {})
+                logger.info(f"Resuming from checkpoint at index {start_index}")
+            except Exception as e:
+                logger.warning(f"Failed to load checkpoint: {e}")
+                start_index = 0
+                results = {}
+        
+        # 初始化结果结构
+        if not results:
+            results = {
+                'processed_samples': [],
+                'metric_scores': {metric: [] for metric in metrics},
+                'failed_evaluations': [],
+                'processing_stats': {
+                    'total_samples': len(data),
+                    'processed_count': 0,
+                    'success_count': 0,
+                    'failure_count': 0,
+                    'start_time': datetime.now().isoformat()
+                }
+            }
+        
+        # 批量处理数据
+        for i in range(start_index, len(data), batch_size):
+            batch = data[i:i + batch_size]
+            
+            for j, sample in enumerate(batch):
+                sample_index = i + j
+                
+                try:
+                    # 评估单个样本
+                    sample_results = self._evaluate_single_sample(sample, metrics)
+                    
+                    results['processed_samples'].append({
+                        'index': sample_index,
+                        'sample_id': sample.get('id', f'sample_{sample_index}'),
+                        'metrics': sample_results
+                    })
+                    
+                    # 更新指标分数
+                    for metric, score in sample_results.items():
+                        if isinstance(score, (int, float)):
+                            results['metric_scores'][metric].append(score)
+                    
+                    results['processing_stats']['success_count'] += 1
+                    
+                except Exception as e:
+                    logger.error(f"Failed to evaluate sample {sample_index}: {e}")
+                    results['failed_evaluations'].append({
+                        'index': sample_index,
+                        'error': str(e)
+                    })
+                    results['processing_stats']['failure_count'] += 1
+                
+                results['processing_stats']['processed_count'] = sample_index + 1
+            
+            # 保存检查点
+            try:
+                with open(checkpoint_path, 'wb') as f:
+                    pickle.dump(results, f)
+                logger.info(f"Checkpoint saved at index {i + len(batch)}")
+            except Exception as e:
+                logger.warning(f"Failed to save checkpoint: {e}")
+        
+        # 完成处理，删除检查点文件
+        if os.path.exists(checkpoint_path):
+            try:
+                os.remove(checkpoint_path)
+                logger.info("Checkpoint file removed after completion")
+            except Exception as e:
+                logger.warning(f"Failed to remove checkpoint file: {e}")
+        
+        results['processing_stats']['end_time'] = datetime.now().isoformat()
+        return results
+    
+    def _evaluate_single_sample(self, sample: Dict[str, Any], metrics: List[str]) -> Dict[str, float]:
+        """评估单个样本的指标"""
+        sample_results = {}
+        
+        for metric in metrics:
+            if metric == "instruction_complexity":
+                sample_results[metric] = self._calculate_instruction_complexity(sample)
+            elif metric == "response_quality":
+                sample_results[metric] = self._calculate_response_quality(sample)
+            elif metric == "domain_relevance":
+                sample_results[metric] = self._calculate_domain_relevance(sample)
+            elif metric == "difficulty_level":
+                sample_results[metric] = self._calculate_difficulty_level(sample)
+            else:
+                # 使用现有的评估方法
+                eval_result = self.evaluate_data_quality([sample], [metric])
+                if metric in eval_result and 'score' in eval_result[metric]:
+                    sample_results[metric] = eval_result[metric]['score']
+                else:
+                    sample_results[metric] = 0.0
+        
+        return sample_results
+    
+    def _calculate_instruction_complexity(self, sample: Dict[str, Any]) -> float:
+        """计算指令复杂度"""
+        instruction = sample.get('instruction', '')
+        if not instruction:
+            return 0.0
+        
+        # 基于指令长度、关键词数量等计算复杂度
+        word_count = len(instruction.split())
+        complexity_keywords = ['analyze', 'compare', 'evaluate', 'synthesize', 'create', 'design']
+        keyword_count = sum(1 for keyword in complexity_keywords if keyword.lower() in instruction.lower())
+        
+        # 归一化复杂度分数 (0-1)
+        complexity_score = min(1.0, (word_count / 100 + keyword_count / 10) / 2)
+        return complexity_score
+    
+    def _calculate_response_quality(self, sample: Dict[str, Any]) -> float:
+        """计算响应质量"""
+        response = sample.get('output', '') or sample.get('response', '')
+        if not response:
+            return 0.0
+        
+        # 基于响应长度、结构化程度等计算质量
+        word_count = len(response.split())
+        sentence_count = len([s for s in response.split('.') if s.strip()])
+        
+        # 检查结构化元素
+        structure_indicators = ['1.', '2.', '•', '-', '\n\n']
+        structure_score = sum(1 for indicator in structure_indicators if indicator in response)
+        
+        # 归一化质量分数 (0-1)
+        quality_score = min(1.0, (word_count / 200 + sentence_count / 20 + structure_score / 10) / 3)
+        return quality_score
+    
+    def _calculate_domain_relevance(self, sample: Dict[str, Any]) -> float:
+        """计算领域相关性"""
+        domain = sample.get('domain', '')
+        instruction = sample.get('instruction', '')
+        
+        if not domain or not instruction:
+            return 0.5  # 默认中等相关性
+        
+        # 简单的关键词匹配
+        domain_keywords = {
+            'math': ['calculate', 'solve', 'equation', 'formula', 'number'],
+            'science': ['experiment', 'hypothesis', 'theory', 'research', 'analysis'],
+            'programming': ['code', 'function', 'algorithm', 'debug', 'implement'],
+            'language': ['translate', 'grammar', 'vocabulary', 'sentence', 'word']
+        }
+        
+        if domain.lower() in domain_keywords:
+            keywords = domain_keywords[domain.lower()]
+            matches = sum(1 for keyword in keywords if keyword.lower() in instruction.lower())
+            relevance_score = min(1.0, matches / len(keywords))
+        else:
+            relevance_score = 0.5
+        
+        return relevance_score
+    
+    def _calculate_difficulty_level(self, sample: Dict[str, Any]) -> float:
+        """计算难度等级"""
+        difficulty = sample.get('difficulty', '')
+        
+        difficulty_mapping = {
+            'easy': 0.2,
+            'medium': 0.5,
+            'hard': 0.8,
+            'expert': 1.0
+        }
+        
+        return difficulty_mapping.get(difficulty.lower(), 0.5)
+    
+    def generate_assessment_report(self, evaluation_results: Dict[str, Any], 
+                                 output_path: str = None) -> Dict[str, Any]:
+        """生成标准化的评估报告"""
+        logger.info("Generating comprehensive assessment report")
+        
+        report = {
+            "report_metadata": {
+                "generation_time": datetime.now().isoformat(),
+                "report_version": "1.0",
+                "total_samples": len(evaluation_results.get('processed_samples', []))
+            },
+            "verification_summary": self._generate_verification_summary(evaluation_results),
+            "score_distributions": self._generate_score_distributions(evaluation_results),
+            "domain_performance": self._generate_domain_performance(evaluation_results),
+            "quality_insights": self._generate_quality_insights(evaluation_results),
+            "recommendations": self._generate_recommendations(evaluation_results)
+        }
+        
+        # 保存报告到文件
+        if output_path:
+            try:
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(report, f, ensure_ascii=False, indent=2)
+                logger.info(f"Assessment report saved to {output_path}")
+            except Exception as e:
+                logger.error(f"Failed to save report: {e}")
+        
+        return report
+    
+    def _generate_verification_summary(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """生成验证摘要"""
+        stats = results.get('processing_stats', {})
+        
+        total_samples = stats.get('total_samples', 0)
+        success_count = stats.get('success_count', 0)
+        failure_count = stats.get('failure_count', 0)
+        
+        pass_rate = (success_count / total_samples * 100) if total_samples > 0 else 0
+        fail_rate = (failure_count / total_samples * 100) if total_samples > 0 else 0
+        
+        return {
+            "total_samples": total_samples,
+            "verification_pass_count": success_count,
+            "verification_fail_count": failure_count,
+            "pass_rate_percentage": round(pass_rate, 2),
+            "fail_rate_percentage": round(fail_rate, 2)
+        }
+    
+    def _generate_score_distributions(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """生成分数分布统计"""
+        metric_scores = results.get('metric_scores', {})
+        distributions = {}
+        
+        for metric, scores in metric_scores.items():
+            if scores:
+                distributions[metric] = {
+                    "mean": round(statistics.mean(scores), 3),
+                    "median": round(statistics.median(scores), 3),
+                    "std_dev": round(statistics.stdev(scores) if len(scores) > 1 else 0, 3),
+                    "min": round(min(scores), 3),
+                    "max": round(max(scores), 3),
+                    "sample_count": len(scores)
+                }
+            else:
+                distributions[metric] = {
+                    "mean": 0, "median": 0, "std_dev": 0,
+                    "min": 0, "max": 0, "sample_count": 0
+                }
+        
+        return distributions
+    
+    def _generate_domain_performance(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """生成领域性能分析"""
+        processed_samples = results.get('processed_samples', [])
+        domain_stats = {}
+        
+        for sample_result in processed_samples:
+            # 从样本中提取领域信息（需要在原始数据中包含）
+            domain = "unknown"  # 默认值，实际应从样本数据中获取
+            
+            if domain not in domain_stats:
+                domain_stats[domain] = {
+                    "sample_count": 0,
+                    "avg_scores": {},
+                    "total_scores": {}
+                }
+            
+            domain_stats[domain]["sample_count"] += 1
+            
+            # 累计各指标分数
+            metrics = sample_result.get('metrics', {})
+            for metric, score in metrics.items():
+                if isinstance(score, (int, float)):
+                    if metric not in domain_stats[domain]["total_scores"]:
+                        domain_stats[domain]["total_scores"][metric] = []
+                    domain_stats[domain]["total_scores"][metric].append(score)
+        
+        # 计算平均分数
+        for domain, stats in domain_stats.items():
+            for metric, scores in stats["total_scores"].items():
+                if scores:
+                    stats["avg_scores"][metric] = round(statistics.mean(scores), 3)
+            # 移除临时的total_scores
+            del stats["total_scores"]
+        
+        return domain_stats
+    
+    def _generate_quality_insights(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """生成质量洞察"""
+        metric_scores = results.get('metric_scores', {})
+        insights = {}
+        
+        for metric, scores in metric_scores.items():
+            if scores:
+                avg_score = statistics.mean(scores)
+                
+                if avg_score >= 0.8:
+                    quality_level = "excellent"
+                elif avg_score >= 0.6:
+                    quality_level = "good"
+                elif avg_score >= 0.4:
+                    quality_level = "fair"
+                else:
+                    quality_level = "poor"
+                
+                insights[metric] = {
+                    "quality_level": quality_level,
+                    "average_score": round(avg_score, 3),
+                    "score_variance": round(statistics.variance(scores) if len(scores) > 1 else 0, 3)
+                }
+        
+        return insights
+    
+    def _generate_recommendations(self, results: Dict[str, Any]) -> List[str]:
+        """生成改进建议"""
+        recommendations = []
+        metric_scores = results.get('metric_scores', {})
+        
+        for metric, scores in metric_scores.items():
+            if scores:
+                avg_score = statistics.mean(scores)
+                
+                if avg_score < 0.5:
+                    if metric == "instruction_complexity":
+                        recommendations.append(f"指令复杂度偏低({avg_score:.2f})，建议增加更具挑战性的任务")
+                    elif metric == "response_quality":
+                        recommendations.append(f"响应质量需要改进({avg_score:.2f})，建议优化回答的结构和完整性")
+                    elif metric == "domain_relevance":
+                        recommendations.append(f"领域相关性较低({avg_score:.2f})，建议加强领域特定内容")
+        
+        failure_rate = results.get('processing_stats', {}).get('failure_count', 0)
+        total_samples = results.get('processing_stats', {}).get('total_samples', 1)
+        
+        if failure_rate / total_samples > 0.1:
+            recommendations.append(f"处理失败率较高({failure_rate/total_samples*100:.1f}%)，建议检查数据格式和处理逻辑")
+        
+        if not recommendations:
+            recommendations.append("整体质量良好，建议继续保持当前标准")
+        
+        return recommendations
