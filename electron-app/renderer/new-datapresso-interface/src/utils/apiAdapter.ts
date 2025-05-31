@@ -51,6 +51,7 @@ interface ElectronAPI {
   getLlmModels: (params?: any) => Promise<any>;
   fetchLLMProviders: () => Promise<any>;
   testLlmProviderConnection: (providerName: string) => Promise<any>; // Added
+  testLLMConnection: (testData: any) => Promise<any>; // Added for new API key testing
   fetchProviderModels: (providerName: string) => Promise<any>; // Added
   updateLlmProviderConfig: (providerName: string, configData: any) => Promise<any>; // Added
   uploadSeedData: (fileBuffer: number[], fileName: string, dataType?: string) => Promise<any>; // Added

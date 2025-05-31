@@ -300,6 +300,106 @@ class GeminiProvider(BaseLLMProvider):
             
         return default_info
 
+    async def list_models(self) -> List[Dict[str, Any]]:
+        """列出提供商支持的所有模型及其详细信息"""
+        try:
+            logger.info("Attempting to retrieve Gemini models from API...")
+            
+            # 尝试从API获取实际可用的模型列表
+            if genai and self.api_key:
+                try:
+                    # 确保API key已配置
+                    genai.configure(api_key=self.api_key)
+                    
+                    models = []
+                    model_list = genai.list_models()
+                    
+                    # 安全检查model_list是否为None或空
+                    if model_list is not None:
+                        for model in model_list:
+                            try:
+                                # 安全获取模型属性
+                                model_name = getattr(model, 'name', None)
+                                display_name = getattr(model, 'display_name', None)
+                                supported_methods = getattr(model, 'supported_generation_methods', None)
+                                
+                                # 检查是否支持文本生成
+                                if (model_name and supported_methods and
+                                    'generateContent' in supported_methods):
+                                    
+                                    clean_name = model_name.replace('models/', '') if model_name else 'unknown'
+                                    models.append({
+                                        "id": model_name or 'unknown',
+                                        "name": clean_name,
+                                        "description": f"Gemini model: {display_name or clean_name}",
+                                        "context_window": getattr(model, 'input_token_limit', 1000000),
+                                        "max_output_tokens": getattr(model, 'output_token_limit', 8192),
+                                        "provider": "gemini"
+                                    })
+                            except Exception as model_error:
+                                logger.warning(f"Error processing model {getattr(model, 'name', 'unknown')}: {model_error}")
+                                continue
+                    
+                    if models:
+                        logger.info(f"Successfully retrieved {len(models)} Gemini models from API")
+                        return models
+                    else:
+                        logger.warning("No valid models found from Gemini API")
+                        
+                except Exception as api_error:
+                    logger.warning(f"Failed to get models from Gemini API: {api_error}")
+            
+            # 回退到静态模型列表
+            logger.info("Using static Gemini model list as fallback")
+            static_models = [
+                {
+                    "id": "models/gemini-1.5-pro",
+                    "name": "gemini-1.5-pro",
+                    "description": "Gemini 1.5 Pro - Advanced reasoning, coding, and creative tasks",
+                    "context_window": 1000000,
+                    "max_output_tokens": 8192,
+                    "provider": "gemini"
+                },
+                {
+                    "id": "models/gemini-1.5-flash",
+                    "name": "gemini-1.5-flash",
+                    "description": "Gemini 1.5 Flash - Fast and efficient for everyday tasks",
+                    "context_window": 1000000,
+                    "max_output_tokens": 8192,
+                    "provider": "gemini"
+                },
+                {
+                    "id": "models/gemini-pro",
+                    "name": "gemini-pro",
+                    "description": "Gemini Pro - Balanced performance for various tasks",
+                    "context_window": 32768,
+                    "max_output_tokens": 8192,
+                    "provider": "gemini"
+                },
+                {
+                    "id": "models/gemini-1.5-flash-8b",
+                    "name": "gemini-1.5-flash-8b",
+                    "description": "Gemini 1.5 Flash 8B - Lightweight and fast model",
+                    "context_window": 1000000,
+                    "max_output_tokens": 8192,
+                    "provider": "gemini"
+                }
+            ]
+            
+            return static_models
+            
+        except Exception as e:
+            logger.error(f"Error in list_models: {e}")
+            # 最小化错误处理，返回基本模型
+            return [{
+                "id": "models/gemini-1.5-pro",
+                "name": "gemini-1.5-pro",
+                "description": "Gemini 1.5 Pro (fallback)",
+                "context_window": 1000000,
+                "max_output_tokens": 8192,
+                "provider": "gemini"
+            }]
+
 # 注册提供商
 if genai: # Only register if the library was successfully imported
     LLMProviderFactory.register_provider("gemini", GeminiProvider)

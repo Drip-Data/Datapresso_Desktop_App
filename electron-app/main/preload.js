@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // fetchLLMProviders is defined below
   // LLM Providers API
   fetchLLMProviders: () => ipcRenderer.invoke('api:llm_api/providers'),
+  testLLMConnection: (testData) => ipcRenderer.invoke('api:llm_api/providers/test_connection', testData),
   testLlmProviderConnection: (providerName) => ipcRenderer.invoke('api:llm_api/providers/test_connection', providerName),
   fetchProviderModels: (providerName) => ipcRenderer.invoke('api:llm_api/providers/models', providerName),
   updateLlmProviderConfig: (providerName, configData) => ipcRenderer.invoke('api:llm_api/providers/update_config', { providerName, configData }),

@@ -235,49 +235,53 @@ async def get_batch_task_status(
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/providers", response_model=Dict[str, Any])
-async def get_llm_providers(service: LlmApiService = Depends(get_llm_api_service)):
-    """获取所有可用的LLM提供商和模型信息"""
+async def get_llm_providers():
+    """获取所有可用的LLM提供商和模型信息 - 简化版本避免阻塞"""
     try:
-        logger.info("Handling GET /providers request")
+        logger.info("GET /providers - using simplified static data")
         
-        # 使用服务层获取提供商信息
-        providers_info = await service.get_providers_info()
-        
+        # 直接返回静态数据，避免任何可能的依赖问题
         return {
             "status": "success",
-            "message": "Successfully retrieved LLM providers information",
-            "providers": providers_info
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in get_llm_providers: {str(e)}", exc_info=True)
-        
-        # 如果出错，返回基本的静态信息
-        return {
-            "status": "success", 
-            "message": "Retrieved static provider information (dynamic detection failed)",
+            "message": "Retrieved LLM providers information",
             "providers": {
                 "openai": {
                     "models": ["gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"],
-                    "has_api_key": bool(os.environ.get("OPENAI_API_KEY")),
-                    "capabilities": {"text": True, "images": True, "embeddings": True, "batch": True}
+                    "has_api_key": False,
+                    "capabilities": {"text": True, "images": True}
                 },
                 "anthropic": {
                     "models": ["claude-3-5-sonnet-20241022", "claude-3-5-haiku-20241022"],
-                    "has_api_key": bool(os.environ.get("ANTHROPIC_API_KEY")),
-                    "capabilities": {"text": True, "images": True, "embeddings": False, "batch": True}
+                    "has_api_key": False,
+                    "capabilities": {"text": True, "images": True}
                 },
                 "gemini": {
                     "models": ["gemini-1.5-pro", "gemini-1.5-flash"],
-                    "has_api_key": bool(os.environ.get("GEMINI_API_KEY")),
-                    "capabilities": {"text": True, "images": True, "embeddings": True, "batch": False}
+                    "has_api_key": False,
+                    "capabilities": {"text": True, "images": True}
                 },
                 "deepseek": {
                     "models": ["deepseek-chat", "deepseek-coder"],
-                    "has_api_key": bool(os.environ.get("DEEPSEEK_API_KEY")),
-                    "capabilities": {"text": True, "images": False, "embeddings": True, "batch": False}
+                    "has_api_key": False,
+                    "capabilities": {"text": True, "images": False}
                 }
-            }        }
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in get_llm_providers: {str(e)}")
+        # 最小化错误处理
+        return {
+            "status": "success",
+            "message": "Basic provider info",
+            "providers": {
+                "gemini": {
+                    "models": ["gemini-1.5-pro"],
+                    "has_api_key": False,
+                    "capabilities": {"text": True}
+                }
+            }
+        }
 
 @router.get("/providers/{provider_name}/models", response_model=BaseResponse)
 async def get_provider_models(
@@ -303,14 +307,25 @@ async def get_provider_models(
 @router.post("/providers/{provider_name}/test", response_model=BaseResponse)
 async def test_llm_provider_connection(
     provider_name: str,
+    test_data: Optional[Dict[str, Any]] = {},
     service: LlmApiService = Depends(get_llm_api_service)
 ):
     """
     测试LLM提供商连接
+    
+    Args:
+        provider_name: 提供商名称
+        test_data: 可选的测试数据，包含 api_key 等配置
     """
     try:
         logger.info(f"Received request to test LLM provider: {provider_name}")
-        test_result = await service.test_provider_connection(provider_name)
+        
+        # 从请求体中获取 API 密钥
+        api_key = None
+        if test_data and isinstance(test_data, dict):
+            api_key = test_data.get("api_key")
+        
+        test_result = await service.test_provider_connection(provider_name, api_key)
         
         if test_result.get("test_passed"):
             return BaseResponse(

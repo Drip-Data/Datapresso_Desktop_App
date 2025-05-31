@@ -175,9 +175,24 @@ const handleDelete = (keyId: string, provider: string) => { // Changed provider 
     const displayName = getProviderDisplayName(provider);
     toast.info(`正在测试 ${displayName} 连接...`);
     
+    console.log('=== React Frontend Test Connection ===');
+    console.log('Provider:', provider);
+    console.log('API Key exists:', !!key);
+    console.log('API Key length:', key ? key.length : 0);
+    
     try {
-      // Call the actual backend API to test connection
-      const result = await testLlmProviderConnection(provider);
+      // Call the new testLLMConnection with full test data
+      const testData = {
+        provider_id: provider,
+        api_key: key,
+        model: 'default' // You might want to get the default model for the provider
+      };
+      
+      console.log('Calling testLLMConnection with:', JSON.stringify(testData, (k, v) =>
+        k === 'api_key' ? '[REDACTED]' : v, 2));
+      
+      // Use the new testLLMConnection method that supports API key parameter
+      const result = await window.electronAPI.testLLMConnection(testData);
       
       if (result.status === 'success') {
         toast.success(`${displayName} 连接测试成功！`);

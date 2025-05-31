@@ -337,12 +337,22 @@ class LLMSettingsComponent {
             }
             
             // 测试API连接
-            const response = await window.electronAPI.testLLMConnection({
+            const testData = {
                 provider_id: providerId,
                 api_key: apiKey,
                 model: defaultModel,
                 ...additionalConfig
-            });
+            };
+            
+            console.log('=== Frontend Test Data ===');
+            console.log('Provider ID:', providerId);
+            console.log('API Key exists:', !!apiKey);
+            console.log('API Key length:', apiKey ? apiKey.length : 0);
+            console.log('Test Data:', JSON.stringify(testData, (key, value) =>
+                key === 'api_key' ? '[REDACTED]' : value, 2));
+            console.log('=== Calling testLLMConnection ===');
+            
+            const response = await window.electronAPI.testLLMConnection(testData);
             
             // 显示测试结果
             if (response.status === 'success') {

@@ -78,15 +78,50 @@ function registerLlmApiHandlers() {
     // Note: invoke_async was previously mapped to /batch. createLlmBatchTask in preload uses 'api:llm_api/batch'.
   ]);
   // Add specific handler for test_connection
-  ipcMain.handle('api:llm_api/providers/test_connection', async (event, providerName) => {
+  ipcMain.handle('api:llm_api/providers/test_connection', async (event, testData) => {
     try {
+      console.log('IPC test_connection received data:', JSON.stringify(testData, null, 2));
+      console.log('Data type:', typeof testData);
+      
+      // 支持两种调用方式：
+      // 1. 传入字符串 (providerName) - 兼容旧版本调用
+      // 2. 传入对象 (testData) - 新版本调用，包含 provider_id 和 api_key
+      let providerName, requestBody;
+      
+      if (typeof testData === 'string') {
+        // 旧版本：只有 provider name
+        providerName = testData;
+        requestBody = {};
+        console.log('Using string mode - provider:', providerName);
+      } else if (testData && typeof testData === 'object') {
+        // 新版本：包含完整测试数据
+        providerName = testData.provider_id;
+        // 创建一个新的对象，只包含 API 密钥和其他配置，排除 provider_id
+        requestBody = {};
+        if (testData.api_key) requestBody.api_key = testData.api_key;
+        if (testData.model) requestBody.model = testData.model;
+        if (testData.base_url) requestBody.base_url = testData.base_url;
+        if (testData.project_id) requestBody.project_id = testData.project_id;
+        if (testData.location) requestBody.location = testData.location;
+        if (testData.version) requestBody.version = testData.version;
+        if (testData.server_type) requestBody.server_type = testData.server_type;
+        console.log('Using object mode - provider:', providerName);
+        console.log('Extracted api_key:', testData.api_key ? '[REDACTED]' : 'MISSING');
+      } else {
+        console.error('Invalid test data type or value:', testData);
+        throw new Error('Invalid test data provided');
+      }
+      
       const url = `${API_BASE_URL}/llm_api/providers/${providerName}/test`;
       console.log(`IPC: Handling api:llm_api/providers/test_connection for ${providerName} with POST to ${url}`);
-      const response = await axios.post(url, {}); // Send empty body as per backend
+      console.log('Request body keys:', Object.keys(requestBody));
+      console.log('Request body has api_key:', !!requestBody.api_key);
+      
+      const response = await axios.post(url, requestBody);
       return response.data;
     } catch (error) {
       const errorMessage = error.response?.data?.detail || error.response?.data?.message || error.message || 'Unknown error';
-      console.error(`Error in IPC api:llm_api/providers/test_connection for ${providerName}:`, errorMessage, error.response?.data);
+      console.error(`Error in IPC api:llm_api/providers/test_connection:`, errorMessage, error.response?.data);
       return { status: 'error', message: errorMessage, error_code: error.response?.data?.error_code };
     }
   });
